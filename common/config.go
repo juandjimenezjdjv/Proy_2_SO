@@ -8,21 +8,21 @@ import (
 // Config contiene la configuración compartida del sistema
 type Config struct {
 	// Configuración del Master
-	MasterHost      string
-	MasterPort      int
-	HeartbeatSec    int
+	MasterHost          string
+	MasterPort          int
+	HeartbeatSec        int
 	HeartbeatTimeoutSec int
-	
+
 	// Configuración de Workers
-	WorkerThreads   int
-	MaxRetries      int
-	
+	WorkerThreads int
+	MaxRetries    int
+
 	// Configuración de almacenamiento
-	DataDir         string
-	ResultsDir      string
-	
+	DataDir    string
+	ResultsDir string
+
 	// Configuración de logging
-	LogLevel        LogLevel
+	LogLevel LogLevel
 }
 
 // LoadConfig carga la configuración desde variables de entorno con valores por defecto

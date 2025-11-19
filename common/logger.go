@@ -38,7 +38,7 @@ func (l *Logger) log(level LogLevel, message string, args ...interface{}) {
 	if !l.shouldLog(level) {
 		return
 	}
-	
+
 	timestamp := time.Now().Format(time.RFC3339)
 	formattedMsg := fmt.Sprintf(message, args...)
 	logLine := fmt.Sprintf("[%s] [%s] [%s] %s", timestamp, level, l.component, formattedMsg)

@@ -11,11 +11,11 @@ const (
 	MsgTypeWorkerRegistered MessageType = "WORKER_REGISTERED"
 	MsgTypeHeartbeat        MessageType = "HEARTBEAT"
 	MsgTypeHeartbeatAck     MessageType = "HEARTBEAT_ACK"
-	
+
 	// Mensajes de asignación de tareas
-	MsgTypeAssignTask    MessageType = "ASSIGN_TASK"
-	MsgTypeTaskAssigned  MessageType = "TASK_ASSIGNED"
-	
+	MsgTypeAssignTask   MessageType = "ASSIGN_TASK"
+	MsgTypeTaskAssigned MessageType = "TASK_ASSIGNED"
+
 	// Mensajes de actualización de estado
 	MsgTypeTaskUpdate    MessageType = "TASK_UPDATE"
 	MsgTypeTaskCompleted MessageType = "TASK_COMPLETED"
@@ -51,7 +51,7 @@ type HeartbeatRequest struct {
 
 // HeartbeatResponse es la respuesta a un heartbeat
 type HeartbeatResponse struct {
-	Success   bool   `json:"success"`
+	Success   bool      `json:"success"`
 	Timestamp time.Time `json:"timestamp"`
 }
 

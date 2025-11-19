@@ -26,12 +26,12 @@ const (
 type OperatorType string
 
 const (
-	OpReadCSV      OperatorType = "read_csv"
-	OpMap          OperatorType = "map"
-	OpFilter       OperatorType = "filter"
-	OpFlatMap      OperatorType = "flat_map"
-	OpReduceByKey  OperatorType = "reduce_by_key"
-	OpJoin         OperatorType = "join"
+	OpReadCSV     OperatorType = "read_csv"
+	OpMap         OperatorType = "map"
+	OpFilter      OperatorType = "filter"
+	OpFlatMap     OperatorType = "flat_map"
+	OpReduceByKey OperatorType = "reduce_by_key"
+	OpJoin        OperatorType = "join"
 )
 
 // WorkerStatus representa el estado de un worker
