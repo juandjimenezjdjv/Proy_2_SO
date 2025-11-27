@@ -239,7 +239,7 @@ func (c *Client) listJobs() error {
 
 	if len(jobs) == 0 {
 		printInfo("No hay jobs en el sistema")
-		fmt.Printf("\n%sTip:%s Use %s./client -cmd submit -job <file>%s para enviar un job\n\n", ColorDim, ColorReset, ColorCyan, ColorReset)
+		fmt.Printf("\n%sTip:%s Use %s./client.exe -cmd submit -job <file>%s para enviar un job\n\n", ColorDim, ColorReset, ColorCyan, ColorReset)
 		return nil
 	}
 
@@ -487,7 +487,7 @@ func printUsage() {
 	fmt.Printf("%s╚════════════════════════════════════════════════════════════════╝%s\n\n", ColorCyan, ColorReset)
 
 	fmt.Printf("%sUSAGE:%s\n", ColorYellow+ColorBold, ColorReset)
-	fmt.Printf("  ./client -cmd <command> [options]\n\n")
+	fmt.Printf("  ./client.exe -cmd <command> [options]\n\n")
 
 	fmt.Printf("%sCOMMANDS:%s\n", ColorYellow+ColorBold, ColorReset)
 	fmt.Printf("  %ssubmit%s    📤 Submit a job to the cluster\n", ColorGreen, ColorReset)
@@ -503,19 +503,19 @@ func printUsage() {
 
 	fmt.Printf("%sEXAMPLES:%s\n", ColorYellow+ColorBold, ColorReset)
 	fmt.Printf("  %s# Submit a job%s\n", ColorDim, ColorReset)
-	fmt.Printf("  ./client -cmd submit -job job.json\n\n")
+	fmt.Printf("  ./client.exe -cmd submit -job job.json\n\n")
 
 	fmt.Printf("  %s# Submit and watch%s\n", ColorDim, ColorReset)
-	fmt.Printf("  ./client -cmd submit -job job.json -watch\n\n")
+	fmt.Printf("  ./client.exe -cmd submit -job job.json -watch\n\n")
 
 	fmt.Printf("  %s# Check job status%s\n", ColorDim, ColorReset)
-	fmt.Printf("  ./client -cmd status -id example-job\n\n")
+	fmt.Printf("  ./client.exe -cmd status -id example-job\n\n")
 
 	fmt.Printf("  %s# List all jobs%s\n", ColorDim, ColorReset)
-	fmt.Printf("  ./client -cmd list\n\n")
+	fmt.Printf("  ./client.exe -cmd list\n\n")
 
 	fmt.Printf("  %s# Check cluster health%s\n", ColorDim, ColorReset)
-	fmt.Printf("  ./client -cmd health\n\n")
+	fmt.Printf("  ./client.exe -cmd health\n\n")
 }
 
 // Helper functions
