@@ -1,0 +1,68 @@
+{
+  "id": "aggregate-multi-function",
+  "name": "Multiple Aggregation Functions",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read_data",
+        "operator": "read_csv",
+        "input_paths": ["sales_data.csv"],
+        "output_path": "temp/data_read.csv"
+      },
+      {
+        "id": "count_by_city",
+        "operator": "aggregate",
+        "dependencies": ["read_data"],
+        "input_paths": ["temp/data_read.csv"],
+        "output_path": "results/aggregate_count.csv",
+        "params": {
+          "function": "count"
+        }
+      },
+      {
+        "id": "sum_by_city",
+        "operator": "aggregate",
+        "dependencies": ["read_data"],
+        "input_paths": ["temp/data_read.csv"],
+        "output_path": "results/aggregate_sum.csv",
+        "params": {
+          "function": "sum",
+          "value_column": 1
+        }
+      },
+      {
+        "id": "avg_by_city",
+        "operator": "aggregate",
+        "dependencies": ["read_data"],
+        "input_paths": ["temp/data_read.csv"],
+        "output_path": "results/aggregate_avg.csv",
+        "params": {
+          "function": "avg",
+          "value_column": 1
+        }
+      },
+      {
+        "id": "min_by_city",
+        "operator": "aggregate",
+        "dependencies": ["read_data"],
+        "input_paths": ["temp/data_read.csv"],
+        "output_path": "results/aggregate_min.csv",
+        "params": {
+          "function": "min",
+          "value_column": 1
+        }
+      },
+      {
+        "id": "max_by_city",
+        "operator": "aggregate",
+        "dependencies": ["read_data"],
+        "input_paths": ["temp/data_read.csv"],
+        "output_path": "results/aggregate_max.csv",
+        "params": {
+          "function": "max",
+          "value_column": 1
+        }
+      }
+    ]
+  }
+}

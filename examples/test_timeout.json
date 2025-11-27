@@ -1,0 +1,36 @@
+{
+  "id": "test-timeout-reduce-500k",
+  "name": "Test Timeout con Reduce 500K",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read",
+        "operator": "read_csv",
+        "input_paths": ["data/test_large_timeout.csv"],
+        "output_path": "temp/timeout_read.csv",
+        "partitions": 4
+      },
+      {
+        "id": "reduce",
+        "operator": "reduce_by_key",
+        "input_paths": ["temp/timeout_read.csv"],
+        "output_path": "results/timeout_result.csv",
+        "partitions": 2,
+        "params": {
+          "key": "category",
+          "value": "value",
+          "fn": "sum",
+          "timeout_sec": 2,
+          "max_memory_mb": 0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "read",
+        "to": "reduce"
+      }
+    ]
+  },
+  "parallelism": 4
+}

@@ -217,7 +217,7 @@ make lint
 - [x] Docker Compose y Makefile
 - [x] Cliente CLI completo
 - [x] Planificador de DAG con ordenamiento topológico
-- [x] Operadores: read_csv, map, filter, **flat_map**, reduce_by_key, join
+- [x] Operadores: read_csv, map, filter, **flat_map**, **aggregate** (count/sum/avg/min/max), reduce_by_key, join
 - [x] Lectura/escritura CSV con particionamiento
 - [x] Sistema de particiones hash-based
 - [x] **Cache en memoria + spill a disco**

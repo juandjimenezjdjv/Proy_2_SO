@@ -1,0 +1,56 @@
+{
+  "id": "validation-complete",
+  "name": "Validación Completa del Sistema",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read1",
+        "operator": "read_csv",
+        "input_paths": ["input.csv"],
+        "output_path": "temp/validation_read.csv",
+        "partitions": 2,
+        "params": {
+          "timeout_sec": 10
+        }
+      },
+      {
+        "id": "flatmap1",
+        "operator": "flat_map",
+        "input_paths": ["temp/validation_read.csv"],
+        "output_path": "temp/validation_tokens.csv",
+        "partitions": 2,
+        "params": {
+          "fn": "split_words",
+          "timeout_sec": 10
+        }
+      },
+      {
+        "id": "map1",
+        "operator": "map",
+        "input_paths": ["temp/validation_tokens.csv"],
+        "output_path": "temp/validation_lower.csv",
+        "partitions": 2,
+        "params": {
+          "fn": "lambda x: x.lower()"
+        }
+      },
+      {
+        "id": "reduce1",
+        "operator": "reduce_by_key",
+        "input_paths": ["temp/validation_lower.csv"],
+        "output_path": "results/validation_wordcount.csv",
+        "partitions": 1,
+        "params": {
+          "key": "word",
+          "fn": "count"
+        }
+      }
+    ],
+    "edges": [
+      {"from": "read1", "to": "flatmap1"},
+      {"from": "flatmap1", "to": "map1"},
+      {"from": "map1", "to": "reduce1"}
+    ]
+  },
+  "parallelism": 2
+}

@@ -1,0 +1,39 @@
+{
+  "id": "test-timeout-5sec",
+  "name": "Test Timeout 5 Segundos",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read",
+        "operator": "read_csv",
+        "input_paths": ["large-input.csv"],
+        "output_path": "temp/timeout_5sec.csv",
+        "partitions": 4,
+        "params": {
+          "timeout_sec": 5,
+          "max_memory_mb": 100
+        }
+      },
+      {
+        "id": "reduce",
+        "operator": "reduce_by_key",
+        "input_paths": ["temp/timeout_5sec.csv"],
+        "output_path": "results/timeout_5sec_out.csv",
+        "partitions": 2,
+        "params": {
+          "key": "word",
+          "fn": "count",
+          "timeout_sec": 5,
+          "max_memory_mb": 100
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "read",
+        "to": "reduce"
+      }
+    ]
+  },
+  "parallelism": 4
+}

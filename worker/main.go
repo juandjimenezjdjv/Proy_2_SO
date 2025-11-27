@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -257,8 +259,8 @@ func (w *Worker) executeTask(task *common.Task) error {
 		w.logger.Error("Error reportando inicio de tarea: %v", err)
 	}
 
-	// Ejecutar usando el executor
-	err := ExecuteTask(task)
+	// Ejecutar con límites de tiempo y memoria
+	err := w.executeTaskWithLimits(task)
 	duration := time.Since(startTime).Milliseconds()
 
 	if err != nil {
@@ -276,6 +278,78 @@ func (w *Worker) executeTask(task *common.Task) error {
 
 	w.logger.Info("Tarea %s completada exitosamente (duración: %dms)", task.ID, duration)
 	return nil
+}
+
+// executeTaskWithLimits ejecuta una tarea con límites de tiempo y memoria
+func (w *Worker) executeTaskWithLimits(task *common.Task) error {
+	// Crear contexto con timeout si está configurado
+	ctx := context.Background()
+	var cancel context.CancelFunc
+
+	if task.TimeoutSec > 0 {
+		w.logger.Info("Tarea %s: timeout configurado a %d segundos", task.ID, task.TimeoutSec)
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(task.TimeoutSec)*time.Second)
+		defer cancel()
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+	}
+
+	// Canal para recibir el resultado de la ejecución
+	type result struct {
+		err error
+	}
+	resultChan := make(chan result, 1)
+
+	// Ejecutar tarea en goroutine
+	go func() {
+		err := ExecuteTask(task)
+		resultChan <- result{err: err}
+	}()
+
+	// Monitoreo de memoria si está configurado
+	var memTicker *time.Ticker
+	if task.MaxMemoryMB > 0 {
+		w.logger.Info("Tarea %s: límite de memoria configurado a %d MB", task.ID, task.MaxMemoryMB)
+		memTicker = time.NewTicker(500 * time.Millisecond)
+		defer memTicker.Stop()
+	}
+
+	// Esperar resultado o límites excedidos
+	for {
+		select {
+		case <-ctx.Done():
+			// Timeout excedido
+			if ctx.Err() == context.DeadlineExceeded {
+				w.logger.Error("Tarea %s: timeout de %d segundos excedido", task.ID, task.TimeoutSec)
+				return fmt.Errorf("timeout de %d segundos excedido", task.TimeoutSec)
+			}
+			return ctx.Err()
+
+		case res := <-resultChan:
+			// Tarea completada (éxito o error)
+			return res.err
+
+		case <-func() <-chan time.Time {
+			if memTicker != nil {
+				return memTicker.C
+			}
+			return nil
+		}():
+			// Verificar uso de memoria
+			if task.MaxMemoryMB > 0 {
+				var m runtime.MemStats
+				runtime.ReadMemStats(&m)
+				currentMemMB := int64(m.Alloc / 1024 / 1024)
+
+				if currentMemMB > task.MaxMemoryMB {
+					w.logger.Error("Tarea %s: límite de memoria excedido (%d MB > %d MB)", task.ID, currentMemMB, task.MaxMemoryMB)
+					cancel() // Cancelar contexto
+					return fmt.Errorf("límite de memoria de %d MB excedido (uso actual: %d MB)", task.MaxMemoryMB, currentMemMB)
+				}
+			}
+		}
+	}
 }
 
 // reportTaskStatus reporta el estado de una tarea al master

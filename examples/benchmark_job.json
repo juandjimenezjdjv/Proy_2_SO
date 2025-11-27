@@ -1,0 +1,46 @@
+{
+  "id": "benchmark-10k-lines",
+  "name": "Benchmark 10K Lines",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read",
+        "operator": "read_csv",
+        "input_paths": ["large-input.csv"],
+        "output_path": "temp/benchmark_read.csv",
+        "partitions": 4
+      },
+      {
+        "id": "process",
+        "operator": "map",
+        "input_paths": ["temp/benchmark_read.csv"],
+        "output_path": "temp/benchmark_processed.csv",
+        "partitions": 4,
+        "params": {
+          "fn": "to_upper"
+        }
+      },
+      {
+        "id": "aggregate",
+        "operator": "reduce_by_key",
+        "input_paths": ["temp/benchmark_processed.csv"],
+        "output_path": "results/benchmark_result.csv",
+        "partitions": 2,
+        "params": {
+          "fn": "count",
+          "key": "col1"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "read",
+        "to": "process"
+      },
+      {
+        "from": "process",
+        "to": "aggregate"
+      }
+    ]
+  }
+}

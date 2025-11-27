@@ -4,8 +4,10 @@ import (
 	"encoding/csv"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/juandjimenezjdjv/Proy_2_SO/common"
@@ -63,6 +65,8 @@ func (e *Executor) ExecuteTask(task *common.Task) error {
 		return e.executeFlatMap(task)
 	case common.OpReduceByKey:
 		return e.executeReduceByKey(task)
+	case common.OpAggregate:
+		return e.executeAggregate(task)
 	case common.OpJoin:
 		return e.executeJoin(task)
 	default:
@@ -279,6 +283,119 @@ func (e *Executor) executeFlatMap(task *common.Task) error {
 	// Escribir resultado
 	outputPath := e.getOutputPath(task)
 	return e.writeCSV(outputPath, flatMappedRecords)
+}
+
+// executeAggregate agrupa registros por clave y aplica función de agregación
+// Soporta: count, sum, avg, min, max
+// Params.Function especifica la función (default: count)
+// Params.ValueColumn especifica la columna a agregar (default: 1)
+func (e *Executor) executeAggregate(task *common.Task) error {
+	// Leer datos de entrada
+	records, err := e.readInputRecords(task)
+	if err != nil {
+		return err
+	}
+
+	// Obtener función de agregación (default: count)
+	aggFunc := "count"
+	if task.Params != nil {
+		if fn, ok := task.Params["function"].(string); ok {
+			aggFunc = fn
+		}
+	}
+
+	// Obtener columna de valor (default: 1)
+	valueCol := 1
+	if task.Params != nil {
+		if col, ok := task.Params["value_column"].(float64); ok {
+			valueCol = int(col)
+		}
+	}
+
+	// Agrupar por primera columna (clave)
+	groups := make(map[string][][]string)
+	for _, record := range records {
+		if len(record) > 0 {
+			key := record[0]
+			groups[key] = append(groups[key], record)
+		}
+	}
+
+	// Aplicar función de agregación
+	aggregatedRecords := make([][]string, 0, len(groups))
+	for key, values := range groups {
+		var result string
+		switch aggFunc {
+		case "count":
+			result = fmt.Sprintf("%d", len(values))
+		case "sum":
+			sum := 0.0
+			for _, record := range values {
+				if len(record) > valueCol {
+					if val, err := strconv.ParseFloat(record[valueCol], 64); err == nil {
+						sum += val
+					}
+				}
+			}
+			result = fmt.Sprintf("%.2f", sum)
+		case "avg":
+			sum := 0.0
+			count := 0
+			for _, record := range values {
+				if len(record) > valueCol {
+					if val, err := strconv.ParseFloat(record[valueCol], 64); err == nil {
+						sum += val
+						count++
+					}
+				}
+			}
+			if count > 0 {
+				result = fmt.Sprintf("%.2f", sum/float64(count))
+			} else {
+				result = "0.00"
+			}
+		case "min":
+			min := math.MaxFloat64
+			for _, record := range values {
+				if len(record) > valueCol {
+					if val, err := strconv.ParseFloat(record[valueCol], 64); err == nil {
+						if val < min {
+							min = val
+						}
+					}
+				}
+			}
+			if min != math.MaxFloat64 {
+				result = fmt.Sprintf("%.2f", min)
+			} else {
+				result = "0.00"
+			}
+		case "max":
+			max := -math.MaxFloat64
+			for _, record := range values {
+				if len(record) > valueCol {
+					if val, err := strconv.ParseFloat(record[valueCol], 64); err == nil {
+						if val > max {
+							max = val
+						}
+					}
+				}
+			}
+			if max != -math.MaxFloat64 {
+				result = fmt.Sprintf("%.2f", max)
+			} else {
+				result = "0.00"
+			}
+		default:
+			// Default a count
+			result = fmt.Sprintf("%d", len(values))
+		}
+		aggregatedRecords = append(aggregatedRecords, []string{key, result})
+	}
+
+	// Escribir resultado
+	outputPath := e.getOutputPath(task)
+	return e.writeCSV(outputPath, aggregatedRecords)
 }
 
 // executeReduceByKey agrupa registros por clave y aplica agregación

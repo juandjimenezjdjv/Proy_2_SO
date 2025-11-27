@@ -150,6 +150,19 @@ func (s *Scheduler) createTasks(jobID string, nodes []common.DAGNode, dag common
 		// Crear una tarea por cada partición
 		for p := 0; p < numPartitions; p++ {
 			taskID := fmt.Sprintf("%s-task-%d-part-%d", jobID, i, p)
+
+			// Extraer timeout y límite de memoria de los params si existen
+			timeoutSec := 0
+			maxMemoryMB := int64(0)
+			if node.Params != nil {
+				if t, ok := node.Params["timeout_sec"].(float64); ok {
+					timeoutSec = int(t)
+				}
+				if m, ok := node.Params["max_memory_mb"].(float64); ok {
+					maxMemoryMB = int64(m)
+				}
+			}
+
 			task := &common.Task{
 				ID:              taskID,
 				JobID:           jobID,
@@ -164,6 +177,8 @@ func (s *Scheduler) createTasks(jobID string, nodes []common.DAGNode, dag common
 				Status:          common.TaskPending,
 				AttemptNum:      0,
 				CreatedAt:       time.Now(),
+				TimeoutSec:      timeoutSec,
+				MaxMemoryMB:     maxMemoryMB,
 			}
 			tasks = append(tasks, task)
 		}

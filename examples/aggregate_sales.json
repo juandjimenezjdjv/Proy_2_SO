@@ -1,0 +1,25 @@
+{
+  "id": "aggregate-sales-example",
+  "name": "Aggregate Sales by City",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read_sales",
+        "operator": "read_csv",
+        "input_paths": ["sales_data.csv"],
+        "output_path": "temp/sales_read.csv"
+      },
+      {
+        "id": "total_by_city",
+        "operator": "aggregate",
+        "dependencies": ["read_sales"],
+        "input_paths": ["temp/sales_read.csv"],
+        "output_path": "results/aggregate_sales_by_city.csv",
+        "params": {
+          "function": "sum",
+          "value_column": 1
+        }
+      }
+    ]
+  }
+}

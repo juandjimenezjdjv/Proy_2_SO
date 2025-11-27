@@ -44,6 +44,7 @@ const (
 	OpFilter      OperatorType = "filter"
 	OpFlatMap     OperatorType = "flat_map"
 	OpReduceByKey OperatorType = "reduce_by_key"
+	OpAggregate   OperatorType = "aggregate"
 	OpJoin        OperatorType = "join"
 )
 
@@ -122,6 +123,9 @@ type Task struct {
 	CompletedAt     *time.Time             `json:"completed_at,omitempty"`
 	DurationMs      int64                  `json:"duration_ms,omitempty"`
 	Error           string                 `json:"error,omitempty"`
+	// Límites configurables (opcionales)
+	TimeoutSec  int   `json:"timeout_sec,omitempty"`   // Tiempo máximo de ejecución en segundos (0 = sin límite)
+	MaxMemoryMB int64 `json:"max_memory_mb,omitempty"` // Memoria máxima en MB (0 = sin límite)
 }
 
 // WorkerInfo contiene información sobre un worker registrado

@@ -1,36 +1,44 @@
 {
-  "name": "wordcount-example",
+  "id": "wordcount-example",
+  "name": "WordCount Example",
   "dag": {
     "nodes": [
       {
         "id": "read",
-        "op": "read_csv",
-        "path": "data/wordcount/input.csv",
-        "partitions": 4,
-        "params": {
-          "column": "text"
-        }
+        "operator": "read_csv",
+        "input_paths": ["input.csv"],
+        "output_path": "temp/wordcount_read.csv",
+        "partitions": 4
       },
       {
         "id": "tokenize",
-        "op": "flat_map",
-        "fn": "split_words",
+        "operator": "flat_map",
+        "input_paths": ["temp/wordcount_read.csv"],
+        "output_path": "temp/wordcount_tokens.csv",
+        "partitions": 4,
         "params": {
-          "delimiter": " "
+          "fn": "split_words"
         }
       },
       {
         "id": "lowercase",
-        "op": "map",
-        "fn": "to_lower"
+        "operator": "map",
+        "input_paths": ["temp/wordcount_tokens.csv"],
+        "output_path": "temp/wordcount_lower.csv",
+        "partitions": 4,
+        "params": {
+          "fn": "lambda x: x.lower()"
+        }
       },
       {
         "id": "count",
-        "op": "reduce_by_key",
-        "key": "word",
-        "fn": "sum",
+        "operator": "reduce_by_key",
+        "input_paths": ["temp/wordcount_lower.csv"],
+        "output_path": "results/wordcount_example_result.csv",
+        "partitions": 2,
         "params": {
-          "init_value": 0
+          "key": "word",
+          "fn": "count"
         }
       }
     ],

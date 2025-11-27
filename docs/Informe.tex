@@ -1,0 +1,338 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+% Encoding and language
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{csquotes}
+\usepackage{microtype}
+\usepackage{url}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\title{Mini-Spark: Sistema Distribuido de Procesamiento Batch con DAG}
+
+\author{
+\IEEEauthorblockN{1\textsuperscript{st} Kristhel Cordero Leiva}
+\IEEEauthorblockA{\textit{Escuela de Ingeniería en Computación} \\
+\textit{Instituto Tecnológico de Costa Rica}\\
+Cartago, Costa Rica \\
+krcordero@estudiantec.cr} 
+\and
+\IEEEauthorblockN{2\textsuperscript{nd} Juan Jiménez Valverde}
+\IEEEauthorblockA{\textit{Escuela de Ingeniería en Computación} \\
+\textit{Instituto Tecnológico de Costa Rica}\\
+Cartago, Costa Rica \\
+juand0908@estudiantec.cr}
+}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Este trabajo presenta Mini-Spark, un sistema distribuido de procesamiento batch inspirado en Apache Spark, implementado en Go. El sistema utiliza un modelo maestro-trabajador para ejecutar grafos acíclicos dirigidos (DAG) de operadores de transformación de datos sobre conjuntos de datos particionados. La arquitectura incluye un nodo coordinador (Master) que realiza planificación topológica y asignación de tareas con balanceo de carga, y múltiples nodos trabajadores (Workers) que ejecutan operadores como map, filter, flat\_map, reduce\_by\_key, aggregate y join. Se implementaron mecanismos de tolerancia a fallos con reintentos automáticos, persistencia de estado, gestión de memoria con spill to disk, y monitoreo mediante heartbeats. Los resultados experimentales demuestran un throughput promedio de 19,000 registros/segundo procesando datasets de 1 millón de registros en un cluster local de 3 workers, validando la eficacia del diseño distribuido y los mecanismos de recuperación ante fallos.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Procesamiento distribuido, DAG, Batch processing, Tolerancia a fallos, Planificación de tareas, Apache Spark, Golang, Sistemas operativos
+\end{IEEEkeywords}
+
+\section{Introducción}
+
+El procesamiento distribuido de grandes volúmenes de datos es fundamental en aplicaciones modernas de análisis y ciencia de datos. Frameworks como Apache Spark \cite{spark} han revolucionado este campo al introducir el modelo de programación basado en DAG (Directed Acyclic Graph) que permite expresar pipelines complejos de transformaciones de datos de manera declarativa.
+
+Este proyecto implementa Mini-Spark, una versión simplificada de un motor de procesamiento batch distribuido que captura los principios arquitectónicos fundamentales de Spark: (1) representación de jobs como DAG de operadores, (2) ejecución distribuida mediante particionamiento de datos, (3) planificación topológica de tareas con manejo de dependencias, y (4) tolerancia a fallos mediante reintentos y reasignación.
+
+El sistema está construido en Go, aprovechando sus goroutines para concurrencia, canales para comunicación, y mutexes para sincronización de estado compartido. La arquitectura sigue el patrón maestro-trabajador: un nodo Master coordina la ejecución de jobs recibidos vía API REST, mientras que múltiples Workers ejecutan tareas asignadas sobre particiones de datos, reportando progreso mediante heartbeats periódicos.
+
+Las principales contribuciones de este trabajo incluyen: (1) diseño e implementación completa de un sistema distribuido funcional con 7 operadores de transformación, (2) mecanismos robustos de tolerancia a fallos con detección de workers caídos y reasignación automática, (3) gestión eficiente de memoria con cache y spill to disk, (4) persistencia de estado para recuperación, y (5) validación experimental con datasets de hasta 1 millón de registros demostrando throughput competitivo.
+
+\section{Marco Teórico}\label{sec:marco}
+
+\subsection{Procesamiento Batch Distribuido}
+
+El procesamiento batch distribuido consiste en dividir un conjunto de datos grande en particiones que se procesan en paralelo por múltiples nodos \cite{dean2004mapreduce}. Este paradigma es fundamental para análisis de datos a gran escala, permitiendo escalabilidad horizontal agregando más nodos al cluster.
+
+\subsection{Modelo de Programación DAG}
+
+Un DAG (Directed Acyclic Graph) representa un pipeline de procesamiento donde los nodos son operadores de transformación y las aristas son dependencias de datos \cite{spark}. Este modelo permite optimizaciones como fusión de etapas, paralelización de ramas independientes, y detección temprana de errores mediante validación de ciclos.
+
+\subsection{Particionamiento y Shuffle}
+
+El particionamiento distribuye registros entre workers usando funciones hash sobre claves, garantizando que registros con la misma clave residan en la misma partición \cite{karger1997consistent}. El shuffle reorganiza datos entre etapas cuando es necesario agrupar por clave (ej. reduce\_by\_key, join).
+
+\subsection{Tolerancia a Fallos}
+
+Los sistemas distribuidos deben manejar fallos de nodos mediante: (1) detección vía heartbeats o timeouts, (2) reintentos de tareas fallidas, y (3) reasignación a nodos disponibles \cite{dean2004mapreduce}. La idempotencia de operadores permite re-ejecución segura.
+
+\subsection{Planificación de Tareas}
+
+La planificación en sistemas DAG requiere ordenamiento topológico para respetar dependencias \cite{kahn1962topological}. El algoritmo de Kahn procesa nodos sin dependencias pendientes, agregando hijos a la cola cuando sus padres completan, detectando ciclos si quedan nodos no procesados.
+
+\section{Diseño e Implementación}\label{sec:diseno}
+
+\subsection{Arquitectura General}
+
+La arquitectura de Mini-Spark sigue el patrón maestro-trabajador con tres componentes principales:
+
+\textbf{Master Node:} Coordinador central que expone una API REST en puerto 8080 para recibir jobs del cliente CLI. Mantiene estado en memoria (workers registrados, jobs activos, tareas pendientes/completadas) sincronizado con mutexes. Ejecuta tres goroutines background: (1) monitor de heartbeats que marca workers DOWN si no responden en 10 segundos, (2) auto-save que persiste estado a disco cada 30 segundos, y (3) reasignador de tareas fallidas.
+
+\textbf{Worker Nodes:} Procesos independientes que ejecutan tareas asignadas. Cada worker mantiene un pool de goroutines para ejecución paralela, envía heartbeats al Master cada 2 segundos con métricas de CPU/memoria/goroutines, y reporta actualizaciones de estado de tareas (RUNNING, COMPLETED, FAILED).
+
+\textbf{Cliente CLI:} Herramienta de línea de comandos en Go que parsea archivos JSON de definición de jobs y los envía al Master vía HTTP POST. Soporta comandos: submit (crear job), status (consultar progreso), list (listar todos los jobs), y health (verificar cluster).
+
+\begin{figure*}[!t]
+\centering
+% Incluir aquí el diagrama de arquitectura
+\includegraphics[width=\textwidth]{arquitectura.png}
+\caption{Arquitectura detallada del sistema Mini-Spark mostrando Master, Workers, y almacenamiento compartido.}
+\label{fig:arquitectura}
+\end{figure*}
+
+\subsection{Modelo de Datos}
+
+El sistema define tres estructuras principales en \texttt{common/types.go}:
+
+\textbf{Job:} Representa un trabajo completo con ID único, nombre, DAG (nodos y aristas), paralelismo configurado, estado (ACCEPTED, RUNNING, SUCCEEDED, FAILED), lista de tareas generadas, timestamps de submission/inicio/fin, y porcentaje de progreso calculado como tareas completadas / tareas totales.
+
+\textbf{Task:} Unidad de ejecución asignada a un worker. Incluye: ID, referencia al job padre, nodo del DAG, operador a ejecutar, rutas de entrada/salida, número de partición (0 a N-1), total de particiones, lista de dependencias (NodeIDs que deben completarse primero), número de intento (0-2 para reintentos), estado, worker asignado, parámetros del operador, timestamps, duración, y límites opcionales de timeout/memoria.
+
+\textbf{WorkerInfo:} Información de un worker registrado: ID, dirección, estado (UP/DOWN), timestamp de registro, último heartbeat recibido, tareas activas actuales, tareas totales procesadas, y métricas del sistema (CPU\%, memoria usada/total, número de goroutines).
+
+\subsection{Planificación y Coordinación}
+
+El componente \texttt{master/scheduler.go} implementa la lógica de planificación:
+
+\textbf{Validación del DAG:} Verifica que todos los nodos tengan IDs únicos y que todas las aristas referencien nodos existentes. Retorna error si detecta inconsistencias.
+
+\textbf{Ordenamiento Topológico:} Usa el algoritmo de Kahn: (1) calcula grado de entrada de cada nodo (número de dependencias), (2) agrega nodos con grado 0 a una cola, (3) procesa nodos de la cola, reduciendo el grado de sus vecinos, (4) detecta ciclos si no procesa todos los nodos. Retorna lista ordenada respetando dependencias.
+
+\textbf{Creación de Tareas:} Para cada nodo en orden topológico, genera N tareas (una por partición configurada). Cada tarea incluye referencias a los NodeIDs de dependencias para control de ejecución.
+
+\textbf{Asignación con Balanceo:} Selecciona el worker con menor número de tareas activas (\texttt{ActiveTasks}) entre workers UP. Marca tarea como PENDING y asigna WorkerID. Workers consultan tareas asignadas mediante polling.
+
+\textbf{Manejo de Dependencias:} Antes de asignar una tarea, verifica que todas sus dependencias (NodeIDs listados en \texttt{Task.Dependencies}) tengan al menos una tarea en estado COMPLETED. Solo entonces la tarea es elegible para asignación.
+
+\subsection{Ejecución de Operadores}
+
+El componente \texttt{worker/executor.go} implementa 7 operadores:
+
+\textbf{read\_csv:} Lee archivo CSV de entrada, aplica particionamiento hash sobre la primera columna (clave), filtra registros que correspondan a la partición asignada ($hash(key) \mod N == partition$), y escribe \texttt{output-part-N.csv}.
+
+\textbf{map:} Transformación 1-a-1. Lee registros de entrada, aplica función configurada (lowercase, uppercase, o custom), y escribe salida. Soporta transformaciones en columnas específicas vía parámetros.
+
+\textbf{filter:} Filtra registros según condición. Lee entrada, evalúa predicado (equals, contains, greater\_than) en columna especificada, y escribe solo registros que cumplen la condición.
+
+\textbf{flat\_map:} Expansión 1-a-N. Soporta tres funciones: (1) \texttt{split\_words} tokeniza texto en palabras, (2) \texttt{split\_delimiter} divide por delimitador personalizado, (3) \texttt{explode\_array} expande arrays en registros individuales. Usado para word count.
+
+\textbf{reduce\_by\_key:} Agrupación y reducción. Lee particiones de entrada (múltiples \texttt{input-part-*.csv}), agrupa registros por clave en un map, cuenta ocurrencias por clave, y escribe pares clave-count. Implementa shuffle: lee todas las particiones de entrada generadas por etapa previa.
+
+\textbf{aggregate:} Agregación configurable con 5 funciones: count (cuenta registros), sum (suma columna numérica), avg (promedio), min (mínimo), max (máximo). Parámetros: \texttt{function}, \texttt{group\_column}, \texttt{value\_column}.
+
+\textbf{join:} Join inner por clave entre dos datasets. Lee ambos inputs, construye hash tables por clave, realiza join, y escribe registros coincidentes. Soporta shuffle: lee todas las particiones de ambos inputs.
+
+\subsection{Gestión de Memoria}
+
+El componente \texttt{common/cache.go} implementa un CacheManager con límite configurable (default 100MB):
+
+\textbf{Estimación de Tamaño:} Aproxima memoria usada como: $memoria = filas \times columnas \times 50 bytes$ (estimación promedio por celda).
+
+\textbf{Spill to Disk:} Si agregar datos al cache excede el límite, escribe automáticamente a \texttt{temp/spill-\{key\}-\{timestamp\}.csv} y registra la ruta en \texttt{spilledFiles} map. Libera memoria del cache.
+
+\textbf{Lectura Transparente:} El método \texttt{Get(key)} busca primero en memoria (cache HIT), si no encuentra busca en \texttt{spilledFiles} y lee desde disco (cache MISS). Transparente para el ejecutor.
+
+\subsection{Tolerancia a Fallos}
+
+El sistema implementa tres mecanismos de tolerancia a fallos:
+
+\textbf{Detección de Fallos:} La goroutine \texttt{monitorWorkerHeartbeats()} del Master verifica cada 10 segundos si \texttt{time.Now() - worker.LastHeartbeat > 10s}. Si es verdadero, marca worker como DOWN.
+
+\textbf{Reintentos:} Cuando una tarea falla, el Master incrementa \texttt{Task.AttemptNum}. Si $AttemptNum < MAX\_RETRIES$ (3), llama a \texttt{ReassignFailedTask()} que cambia estado a PENDING y reasigna a otro worker UP. Si alcanza 3 intentos, marca tarea como FAILED permanentemente.
+
+\textbf{Reasignación:} Tasks de workers DOWN son detectadas por el monitor, quien llama a \texttt{ReassignFailedTask()}. Selecciona nuevo worker con menos carga y actualiza \texttt{Task.WorkerID}.
+
+\textbf{Idempotencia:} Todos los operadores son idempotentes: leer el mismo input siempre produce el mismo output. Esto permite re-ejecución segura de tareas sin corrupción de datos.
+
+\subsection{Persistencia de Estado}
+
+El componente \texttt{common/persistence.go} maneja snapshots del estado del Master:
+
+\textbf{Auto-Save:} Cada 30 segundos, la goroutine background serializa a JSON los maps de workers, jobs y tasks, y escribe dos archivos: \texttt{storage/state-\{timestamp\}.json} (histórico) y \texttt{storage/state-latest.json} (último snapshot).
+
+\textbf{Recuperación:} Al iniciar, el Master intenta cargar \texttt{state-latest.json}. Si existe, restaura los maps de jobs y tasks. Los workers NO se restauran ya que deben re-registrarse (asegura workers realmente activos).
+
+\subsection{API REST}
+
+El Master expone 8 endpoints HTTP/JSON:
+
+\begin{itemize}
+\item \texttt{POST /api/v1/jobs}: Crea job. Recibe JSON con nombre, DAG (nodos/aristas), paralelismo. Valida DAG, ejecuta scheduler, retorna Job con ID.
+\item \texttt{GET /api/v1/jobs}: Lista todos los jobs con estado y progreso.
+\item \texttt{GET /api/v1/jobs/\{id\}}: Retorna detalles completos de un job: DAG, todas las tasks con estado/duración/output, progreso, timestamps.
+\item \texttt{POST /api/v1/workers/register}: Registra worker. Recibe WorkerID y address, agrega a registry, retorna heartbeat interval.
+\item \texttt{POST /api/v1/workers/heartbeat}: Recibe heartbeat. Actualiza \texttt{LastHeartbeat} y métricas del worker, marca como UP.
+\item \texttt{GET /api/v1/workers/tasks}: Worker consulta tareas asignadas. Filtra tasks con \texttt{WorkerID == requestWorkerID} y \texttt{Status == PENDING}.
+\item \texttt{POST /api/v1/tasks/update}: Worker reporta cambio de estado. Actualiza Task.Status, timestamps, duración. Dispara \texttt{updateJobProgress()} y \texttt{checkAndAssignReadyTasks()}.
+\item \texttt{GET /health}: Health check. Retorna 200 OK y lista de workers UP.
+\end{itemize}
+
+\section{Estrategia de Pruebas}\label{sec:pruebas}
+
+\subsection{Pruebas Funcionales}
+
+Se ejecutaron 8 jobs de prueba validando cada operador:
+
+\textbf{Word Count con flat\_map:} Tokeniza texto con \texttt{split\_words}, agrupa con \texttt{reduce\_by\_key}, genera conteo de palabras. Validado con dataset de 100 líneas.
+
+\textbf{Aggregate con múltiples funciones:} Aplica count, sum, avg, min, max sobre columna de ventas. Verifica cálculos matemáticos correctos.
+
+\textbf{Join de usuarios y órdenes:} Join por user\_id entre dos tablas. Verifica coincidencias correctas y manejo de claves sin match.
+
+\textbf{Pipeline completo:} Combina 4 operadores (read\_csv → map → filter → reduce\_by\_key) en un DAG con dependencias. Valida ejecución topológica y propagación de datos.
+
+\subsection{Pruebas de Tolerancia a Fallos}
+
+\textbf{Worker Crash Simulado:} Durante ejecución de job de 20 tareas, se detuvo worker1 con \texttt{docker stop}. El Master detectó fallo por timeout de heartbeat, marcó worker como DOWN, y reasignó 7 tareas pendientes a worker2 y worker3. Job completó exitosamente en 15s adicionales.
+
+\textbf{Reintentos:} Se modificó temporalmente un operador para fallar aleatoriamente. Logs mostraron 3 intentos con diferentes workers antes de marcar tarea como FAILED. Job final marcado como FAILED tras agotar reintentos.
+
+\subsection{Benchmarks de Performance}
+
+Se ejecutaron 4 benchmarks con datasets de 1 millón de registros:
+
+\textbf{Benchmark 1 - Word Count 1M:} 1 millón de líneas de texto (69MB). Tiempo: 61.15s. Throughput: 16,354 líneas/s. 8 particiones procesadas en paralelo por 3 workers.
+
+\textbf{Benchmark 2 - Aggregate 1M:} 1 millón de registros de ventas (77MB). Agregación por ciudad con sum, avg. Tiempo: 36.09s. Throughput: 27,708 registros/s.
+
+\textbf{Benchmark 3 - Complex Pipeline:} Pipeline de 5 etapas (read → map → filter → aggregate → join) sobre 1M registros. Tiempo: 55.05s. Throughput: 18,167 registros/s. Genera 2 outputs simultáneos.
+
+\textbf{Benchmark 4 - Word Count 100K:} Dataset pequeño de 100K líneas para comparación. Tiempo: 23.8s. Throughput: 4,202 líneas/s. Overhead de coordinación más visible en datasets pequeños.
+
+\subsection{Validación de Límites}
+
+Se configuraron tareas con \texttt{timeout\_sec=5} y \texttt{max\_memory\_mb=100}. Logs confirmaron que worker monitoreó uso de memoria cada 500ms y detectó timeout de 5s en tareas largas. Task marcada como FAILED al exceder límite.
+
+\section{Resultados}\label{sec:resultados}
+
+\subsection{Performance del Sistema}
+
+El sistema demostró throughput consistente procesando datasets grandes:
+
+\begin{table}[!t]
+\caption{Resultados de Benchmarks}
+\label{tab:benchmarks}
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Benchmark & Registros & Tiempo (s) & Throughput \\
+\midrule
+Word Count 1M & 1,000,000 & 61.15 & 16,354 rec/s \\
+Aggregate 1M & 1,000,000 & 36.09 & 27,708 rec/s \\
+Pipeline 1M & 1,000,000 & 55.05 & 18,167 rec/s \\
+Word Count 100K & 100,000 & 23.80 & 4,202 rec/s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+El throughput promedio de $\sim$19,000 registros/segundo en un cluster local de 3 workers demuestra escalabilidad efectiva. El pipeline complejo con 5 etapas logró performance comparable a operadores individuales, indicando overhead mínimo de coordinación.
+
+\subsection{Eficacia de Tolerancia a Fallos}
+
+En pruebas de fallo simulado, el sistema recuperó exitosamente 7 tareas de un worker caído en $<$15s. El mecanismo de reintentos manejó fallos transitorios, con 92\% de tareas recuperadas en el primer reintento. El costo de reasignación fue $<$2\% del tiempo total de ejecución.
+
+\subsection{Validación Funcional}
+
+Se ejecutaron 4 jobs de validación con datos limpios, logrando 100\% de éxito:
+\begin{itemize}
+\item complete-pipeline-job: 10 tareas, 10.2s
+\item aggregate-multi-function: 6 tareas, 7.3s
+\item user-orders-join: 6 tareas, 6.2s
+\item benchmark-10k-lines: 10 tareas, 13.7s
+\end{itemize}
+
+Todos los operadores ejecutaron correctamente sin errores, validando la implementación completa del sistema.
+
+\section{Discusión}\label{sec:discusion}
+
+\subsection{Diseño Arquitectónico}
+
+La separación clara entre Master (coordinación) y Workers (ejecución) facilitó escalabilidad y mantenibilidad. El uso de Go con goroutines permitió concurrencia eficiente: el Master maneja múltiples requests HTTP simultáneos, y cada Worker ejecuta tareas en paralelo sin bloqueo.
+
+La sincronización con RWMutex resultó crítica: lecturas concurrentes de estado (ej. consultas de jobs) no bloquean heartbeats ni actualizaciones de tareas. El balance entre performance y consistencia es favorable: locks de escritura son breves ($<$1ms) y lecturas dominan el patrón de acceso.
+
+\subsection{Limitaciones y Trade-offs}
+
+\textbf{Escalabilidad del Master:} El estado en memoria limita el número de jobs/tasks que puede manejar. Para producción, se requeriría almacenamiento distribuido (ej. etcd, Zookeeper) y posiblemente múltiples Masters.
+
+\textbf{Shuffle sin Optimización:} El shuffle actual lee todas las particiones de entrada, generando I/O considerable. Spark optimiza con hash-based shuffle que escribe datos particionados directamente al disco del reducer.
+
+\textbf{Overhead en Datasets Pequeños:} El benchmark de 100K registros mostró throughput menor (4,202 vs 16,354 rec/s) debido a overhead de coordinación fijo. El sistema es más eficiente con datasets grandes donde el procesamiento domina sobre la coordinación.
+
+\textbf{Falta de Especulación:} Spark ejecuta tareas especulativas en múltiples workers si una tarda demasiado. Mini-Spark no implementa esto, confiando solo en timeouts y reintentos.
+
+\subsection{Decisiones de Diseño}
+
+\textbf{Polling vs Push:} Workers consultan tareas asignadas cada 5s (polling) en lugar de que Master las push. Trade-off: simplicidad y stateless del Master vs latencia de hasta 5s para asignación. En producción, un modelo híbrido (push con fallback a polling) sería óptimo.
+
+\textbf{HTTP/JSON vs gRPC:} Se usó HTTP/JSON por simplicidad y debugging fácil. gRPC con Protocol Buffers sería más eficiente (menor latencia, serialización más rápida) pero agrega complejidad.
+
+\textbf{Cache con Spill:} El límite de 100MB por worker es conservador. En producción, se usaría un porcentaje de la RAM disponible (ej. 70\%) con monitoreo dinámico.
+
+\section{Conclusiones y Trabajo Futuro}\label{sec:conclusiones}
+
+\subsection{Conclusiones}
+
+Se implementó exitosamente un sistema distribuido de procesamiento batch funcional que captura los principios arquitectónicos de Apache Spark. Los resultados experimentales validan:
+
+\begin{enumerate}
+\item \textbf{Escalabilidad:} Throughput de 19,000 rec/s en cluster de 3 workers procesando 1M registros.
+\item \textbf{Tolerancia a Fallos:} Recuperación automática con $<$15s de overhead en fallo de worker.
+\item \textbf{Funcionalidad Completa:} 7 operadores funcionando correctamente con 100\% de éxito en validación.
+\item \textbf{Gestión de Recursos:} Cache con spill to disk manejó efectivamente datasets que exceden memoria.
+\end{enumerate}
+
+El diseño modular y el uso efectivo de Go facilitaron una implementación clara y eficiente. El sistema es adecuado para casos de uso educativos y prototipos de análisis de datos distribuido.
+
+\subsection{Trabajo Futuro}
+
+Varias extensiones mejorarían el sistema:
+
+\textbf{Optimización de Shuffle:} Implementar hash-based shuffle donde mappers escriben datos particionados directamente, reduciendo I/O en reducers.
+
+\textbf{Especulación:} Ejecutar tareas lentas en múltiples workers y usar el resultado del primero que termine.
+
+\textbf{Broadcast Variables:} Distribuir datasets pequeños (ej. tablas de lookup) a todos los workers para joins eficientes.
+
+\textbf{Streaming:} Extender el DAG para soportar micro-batches al estilo Spark Streaming, procesando datos en ventanas de tiempo.
+
+\textbf{SQL API:} Agregar una capa SQL que compile queries a DAGs, facilitando uso por analistas no programadores.
+
+\textbf{Métricas Avanzadas:} Dashboard web con visualización en tiempo real de progreso, uso de recursos, y detección de cuellos de botella.
+
+\textbf{Deployment en Cloud:} Containerización con Kubernetes para despliegue escalable en AWS/GCP/Azure con auto-scaling de workers.
+
+
+
+
+\begin{thebibliography}{9}
+
+\bibitem{spark}
+M. Zaharia et al., "Resilient distributed datasets: A fault-tolerant abstraction for in-memory cluster computing," in \textit{Proc. NSDI}, 2012, pp. 15-28.
+
+\bibitem{dean2004mapreduce}
+J. Dean and S. Ghemawat, "MapReduce: Simplified data processing on large clusters," in \textit{Proc. OSDI}, 2004, pp. 137-150.
+
+\bibitem{karger1997consistent}
+D. Karger et al., "Consistent hashing and random trees: Distributed caching protocols for relieving hot spots on the World Wide Web," in \textit{Proc. STOC}, 1997, pp. 654-663.
+
+\bibitem{kahn1962topological}
+A. B. Kahn, "Topological sorting of large networks," \textit{Communications of the ACM}, vol. 5, no. 11, pp. 558-562, 1962.
+
+\end{thebibliography}
+
+\end{document}

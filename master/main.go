@@ -3,8 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/juandjimenezjdjv/Proy_2_SO/common"
@@ -301,21 +305,44 @@ type JobRequest struct {
 
 // handleCreateJob crea un nuevo job
 func (m *Master) handleCreateJob(w http.ResponseWriter, r *http.Request) {
-	// Intentar parsear como JobRequest (formato con stages)
-	var jobReq JobRequest
-	if err := json.NewDecoder(r.Body).Decode(&jobReq); err != nil {
-		m.logger.Error("Error decodificando job: %v", err)
-		http.Error(w, "JSON inválido", http.StatusBadRequest)
+	// Leer el body una sola vez
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		m.logger.Error("Error leyendo body: %v", err)
+		http.Error(w, "Error leyendo request", http.StatusBadRequest)
 		return
 	}
 
-	// Convertir stages a DAG
-	dag := m.convertStagesToDAG(jobReq.Stages)
+	// Intentar parsear como Job directo (con DAG)
+	var jobDirect common.Job
+	var dag common.DAG
+	var jobID, jobName string
+
+	if err := json.Unmarshal(bodyBytes, &jobDirect); err == nil && len(jobDirect.DAG.Nodes) > 0 {
+		// Formato DAG directo
+		dag = jobDirect.DAG
+		jobID = jobDirect.ID
+		jobName = jobDirect.Name
+		m.logger.Info("Parseado como formato DAG directo (%d nodes)", len(dag.Nodes))
+	} else {
+		// Intentar parsear como JobRequest (formato con stages)
+		var jobReq JobRequest
+		if err := json.Unmarshal(bodyBytes, &jobReq); err != nil {
+			m.logger.Error("Error decodificando job: %v", err)
+			http.Error(w, "JSON inválido", http.StatusBadRequest)
+			return
+		}
+		// Convertir stages a DAG
+		dag = m.convertStagesToDAG(jobReq.Stages)
+		jobID = jobReq.JobID
+		jobName = jobReq.Name
+		m.logger.Info("Parseado como formato stages (%d stages)", len(jobReq.Stages))
+	}
 
 	// Crear el job real
 	job := common.Job{
-		ID:          jobReq.JobID,
-		Name:        jobReq.Name,
+		ID:          jobID,
+		Name:        jobName,
 		DAG:         dag,
 		Status:      common.JobStatusAccepted,
 		CreatedAt:   time.Now(),
@@ -740,7 +767,25 @@ func main() {
 	config := common.LoadConfig()
 	master := NewMaster(config)
 
-	if err := master.Start(); err != nil {
+	// Canal para señales de sistema
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Iniciar master en goroutine
+	errChan := make(chan error, 1)
+	go func() {
+		if err := master.Start(); err != nil {
+			errChan <- err
+		}
+	}()
+
+	// Esperar señal de terminación o error
+	select {
+	case <-sigChan:
+		master.logger.Info("Señal de terminación recibida")
+		master.Shutdown()
+		master.logger.Info("Master detenido correctamente")
+	case err := <-errChan:
 		master.logger.Error("Error iniciando Master: %v", err)
 	}
 }
