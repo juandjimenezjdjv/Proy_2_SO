@@ -126,7 +126,7 @@ make up
 ```
 
 **Esto automáticamente:**
-1. Crea los directorios necesarios (`data/`, `results/`, `storage/`)
+1. Crea los directorios necesarios (`app/data/`, `app/results/`, `app/storage/`, `app/temp/`)
 2. Construye las imágenes Docker
 3. Inicia el cluster (1 master + 3 workers)
 4. Espera 5 segundos
@@ -334,7 +334,7 @@ make clean-all
 docker compose down -v
 ```
 
-**⚠️ ADVERTENCIA:** Esto eliminará todos los datos en `results/` y `storage/`.
+**⚠️ ADVERTENCIA:** Esto eliminará todos los datos en `app/results/` y `app/storage/`.
 
 ---
 
@@ -349,8 +349,8 @@ make clean
 
 Esto elimina:
 - Binarios compilados (`master/master`, `worker/worker`)
-- Archivos en `results/`
-- Archivos en `storage/`
+- Archivos en `app/results/`
+- Archivos en `app/storage/`
 
 ### Limpieza completa (incluyendo imágenes Docker)
 
@@ -371,10 +371,10 @@ Esto elimina:
 rm -f master/master worker/worker client/client
 
 # Limpiar resultados y storage
-rm -rf results/* storage/*
+rm -rf app/results/* app/storage/*
 
 # Limpiar archivos temporales
-rm -rf temp/*
+rm -rf app/temp/*
 ```
 
 ---
@@ -546,14 +546,14 @@ Los jobs se definen en archivos JSON con el siguiente formato:
         "id": "read-input",
         "operator": "read_csv",
         "input_paths": ["input.csv"],
-        "output_path": "temp/data-read.csv",
+        "output_path": "app/temp/data-read.csv",
         "partitions": 3
       },
       {
         "id": "transform",
         "operator": "map",
-        "input_paths": ["temp/data-read.csv"],
-        "output_path": "temp/data-transformed.csv",
+        "input_paths": ["app/temp/data-read.csv"],
+        "output_path": "app/temp/data-transformed.csv",
         "partitions": 3,
         "params": {
           "function": "uppercase"
@@ -562,8 +562,8 @@ Los jobs se definen en archivos JSON con el siguiente formato:
       {
         "id": "aggregate",
         "operator": "reduce_by_key",
-        "input_paths": ["temp/data-transformed.csv"],
-        "output_path": "results/final-output.csv",
+        "input_paths": ["app/temp/data-transformed.csv"],
+        "output_path": "app/results/final-output.csv",
         "partitions": 1
       }
     ],
@@ -603,8 +603,8 @@ Lee un archivo CSV y lo particiona para procesamiento distribuido.
 {
   "id": "read-data",
   "operator": "read_csv",
-  "input_paths": ["data/input.csv"],
-  "output_path": "temp/data-read.csv",
+  "input_paths": ["input.csv"],
+  "output_path": "app/temp/data-read.csv",
   "partitions": 3
 }
 ```
@@ -621,8 +621,8 @@ Aplica una función a cada registro.
 {
   "id": "transform",
   "operator": "map",
-  "input_paths": ["temp/input.csv"],
-  "output_path": "temp/output.csv",
+  "input_paths": ["app/temp/input.csv"],
+  "output_path": "app/temp/output.csv",
   "partitions": 2,
   "params": {
     "function": "uppercase"
@@ -638,8 +638,8 @@ Filtra registros que cumplen una condición.
 {
   "id": "filter-data",
   "operator": "filter",
-  "input_paths": ["temp/input.csv"],
-  "output_path": "temp/filtered.csv",
+  "input_paths": ["app/temp/input.csv"],
+  "output_path": "app/temp/filtered.csv",
   "partitions": 2,
   "params": {
     "condition": "length > 0"
@@ -660,8 +660,8 @@ Expande cada registro en múltiples registros.
 {
   "id": "tokenize",
   "operator": "flat_map",
-  "input_paths": ["temp/text.csv"],
-  "output_path": "temp/words.csv",
+  "input_paths": ["app/temp/text.csv"],
+  "output_path": "app/temp/words.csv",
   "partitions": 4,
   "params": {
     "function": "split_words"
@@ -677,8 +677,8 @@ Agrupa registros por clave y cuenta ocurrencias.
 {
   "id": "count-words",
   "operator": "reduce_by_key",
-  "input_paths": ["temp/words.csv"],
-  "output_path": "results/wordcount.csv",
+  "input_paths": ["app/temp/words.csv"],
+  "output_path": "app/results/wordcount.csv",
   "partitions": 2
 }
 ```
@@ -691,8 +691,8 @@ Aplica funciones de agregación (count, sum, avg, min, max).
 {
   "id": "sum-sales",
   "operator": "aggregate",
-  "input_paths": ["temp/sales.csv"],
-  "output_path": "results/total-sales.csv",
+  "input_paths": ["app/temp/sales.csv"],
+  "output_path": "app/results/total-sales.csv",
   "partitions": 1,
   "params": {
     "function": "sum",
@@ -716,8 +716,8 @@ Realiza inner join entre dos datasets por clave.
 {
   "id": "join-users-orders",
   "operator": "join",
-  "input_paths": ["temp/users.csv", "temp/orders.csv"],
-  "output_path": "results/joined.csv",
+  "input_paths": ["app/temp/users.csv", "app/temp/orders.csv"],
+  "output_path": "app/results/joined.csv",
   "partitions": 2,
   "params": {
     "join_key": "user_id",
@@ -805,31 +805,35 @@ Procesa 10K líneas con 3 operadores.
 
 ```
 Proy_2_SO/
-├── data/               # Archivos de entrada (CSV)
-│   ├── input.csv
-│   ├── sales_data.csv
-│   ├── users.csv
-│   ├── orders.csv
-│   ├── large-input.csv (299KB)
-│   ├── sales_1M.csv (77MB)
-│   └── wordcount_1M.csv (69MB)
-│
-├── results/            # Archivos de salida generados
-│   ├── aggregate_count.csv
-│   ├── aggregate_sum.csv
-│   ├── aggregate_avg.csv
-│   ├── benchmark_result-part-0.csv
-│   └── joined-output.csv
-│
-├── temp/               # Archivos intermedios temporales
-│   ├── data-read.csv
-│   ├── mapped.csv
-│   ├── filtered.csv
-│   └── spill/          # Cache overflow
-│
-├── storage/            # Persistencia de estado del Master
-│   ├── state-latest.json
-│   └── state-1764268712.json
+├── app/                # Runtime del sistema
+│   ├── data/           # Archivos de entrada (CSV)
+│   │   ├── input.csv
+│   │   ├── sales_data.csv
+│   │   ├── users.csv
+│   │   ├── orders.csv
+│   │   ├── large-input.csv (299KB)
+│   │   ├── sales_1M.csv (77MB)
+│   │   └── wordcount_1M.csv (69MB)
+│   │
+│   ├── results/        # Archivos de salida generados
+│   │   ├── aggregate_count.csv
+│   │   ├── aggregate_sum.csv
+│   │   ├── aggregate_avg.csv
+│   │   ├── benchmark_result-part-0.csv
+│   │   └── joined-output.csv
+│   │
+│   ├── temp/           # Archivos intermedios temporales
+│   │   ├── data-read.csv
+│   │   ├── mapped.csv
+│   │   ├── filtered.csv
+│   │   └── spill/      # Cache overflow
+│   │
+│   ├── storage/        # Persistencia de estado del Master
+│   │   ├── state-latest.json
+│   │   └── state-1764268712.json
+│   │
+│   └── scripts/        # Scripts de utilidad
+│       └── generate_test_data.py
 │
 └── examples/           # Jobs de ejemplo
     ├── aggregate_sales.json
@@ -846,7 +850,7 @@ Proy_2_SO/
 ### Listar archivos de resultados
 
 ```bash
-ls -lh results/
+ls -lh app/results/
 ```
 
 **Salida:**
@@ -861,7 +865,7 @@ joined-output.csv         1.2 KB
 ### Ver contenido de un resultado
 
 ```bash
-head results/aggregate_count.csv
+head app/results/aggregate_count.csv
 ```
 
 **Ejemplo de salida:**
@@ -875,7 +879,7 @@ Sevilla,1
 ### Ver estado persistido
 
 ```bash
-cat storage/state-latest.json | jq .
+cat app/storage/state-latest.json | jq .
 ```
 
 ---
@@ -1083,10 +1087,10 @@ docker compose restart    # Con Docker
 
 **Solución:**
 ```bash
-# Verificar que el archivo existe en data/
-ls data/input.csv
+# Verificar que el archivo existe en app/data/
+ls app/data/input.csv
 
-# Verificar la ruta en el JSON (debe ser relativa a data/)
+# Verificar la ruta en el JSON (debe ser relativa, el sistema añade app/data/ automáticamente)
 cat examples/my-job.json | grep input_paths
 ```
 
@@ -1118,10 +1122,10 @@ sleep 8
 ./client.exe -cmd status -id aggregate-multi-function
 
 # 7. Ver resultados generados
-ls -lh results/
+ls -lh app/results/
 
 # 8. Ver contenido de un resultado
-cat results/aggregate_count.csv
+cat app/results/aggregate_count.csv
 
 # 9. Ver logs del master
 make logs-master
@@ -1155,10 +1159,10 @@ sleep 8
 ./client.exe -cmd status -id aggregate-multi-function
 
 # 8. Ver resultados generados
-ls -lh results/
+ls -lh app/results/
 
 # 9. Ver contenido de un resultado
-cat results/aggregate_count.csv
+cat app/results/aggregate_count.csv
 
 # 10. Ver logs del master
 docker compose logs master | tail -20
@@ -1183,9 +1187,9 @@ docker compose down
 
 1. **Usa particiones apropiadas**: Para datasets pequeños (<1K registros), usa 1-2 particiones. Para datasets grandes (>100K), usa 4-8 particiones.
 
-2. **Limpia datos intermedios**: Los archivos en `temp/` pueden acumularse. Límpialos periódicamente:
+2. **Limpia datos intermedios**: Los archivos en `app/temp/` pueden acumularse. Límpialos periódicamente:
    ```bash
-   rm -rf temp/*
+   rm -rf app/temp/*
    ```
 
 3. **Monitorea el uso de disco**: Los benchmarks de 1M registros generan ~150MB de resultados.

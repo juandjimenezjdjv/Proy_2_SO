@@ -5,11 +5,18 @@ client/client
 *.exe
 
 # Directorios de datos temporales
-data/*
-results/*
-storage/*
-temp/
-tmp/
+app/data/*
+app/results/*
+app/storage/*
+app/temp/
+app/tmp/
+
+# Mantener estructura de directorios
+!app/data/.gitkeep
+!app/results/.gitkeep
+!app/storage/.gitkeep
+!app/temp/.gitkeep
+!app/scripts/
 
 # Logs
 *.log

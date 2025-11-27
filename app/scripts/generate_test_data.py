@@ -30,7 +30,7 @@ def generate_wordcount_data(filename, num_lines=1000):
 def generate_join_data():
     """Genera datos para probar operación join"""
     # Usuarios
-    with open('../data/users.csv', 'w', newline='') as f:
+    with open('../app/data/users.csv', 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["user_id", "name", "country"])
         users = [
@@ -45,7 +45,7 @@ def generate_join_data():
     print("✓ Generado data/users.csv")
     
     # Pedidos
-    with open('../data/orders.csv', 'w', newline='') as f:
+    with open('../app/data/orders.csv', 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["order_id", "user_id", "amount", "product"])
         orders = [
@@ -78,26 +78,26 @@ def generate_large_dataset(filename, num_lines=10000):
 
 if __name__ == "__main__":
     # Crear directorio data si no existe
-    Path("../data").mkdir(exist_ok=True)
+    Path("../app/data").mkdir(parents=True, exist_ok=True)
     
     print("Generando datasets de prueba...")
     
     # Dataset pequeño para pruebas rápidas
-    generate_wordcount_data("../data/input.csv", num_lines=100)
+    generate_wordcount_data("../app/data/input.csv", num_lines=100)
     
     # Dataset mediano
-    generate_wordcount_data("../data/medium-input.csv", num_lines=1000)
+    generate_wordcount_data("../app/data/medium-input.csv", num_lines=1000)
     
     # Dataset grande para performance
-    generate_large_dataset("../data/large-input.csv", num_lines=10000)
+    generate_large_dataset("../app/data/large-input.csv", num_lines=10000)
     
     # Datos para joins
     generate_join_data()
     
     print("\n✓ Todos los datasets generados exitosamente!")
     print("\nArchivos creados:")
-    print("  - data/input.csv (100 líneas)")
-    print("  - data/medium-input.csv (1000 líneas)")
-    print("  - data/large-input.csv (10000 líneas)")
-    print("  - data/users.csv (5 usuarios)")
-    print("  - data/orders.csv (8 pedidos)")
+    print("  - app/data/input.csv (100 líneas)")
+    print("  - app/data/medium-input.csv (1000 líneas)")
+    print("  - app/data/large-input.csv (10000 líneas)")
+    print("  - app/data/users.csv (5 usuarios)")
+    print("  - app/data/orders.csv (8 pedidos)")

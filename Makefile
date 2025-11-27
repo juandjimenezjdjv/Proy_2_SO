@@ -47,7 +47,7 @@ docker-build: ## Construye las imágenes Docker sin cache
 
 up: ## Inicia el cluster (1 master + 3 workers)
 	@echo "$(GREEN)Iniciando cluster Mini-Spark...$(NC)"
-	@mkdir -p data results storage
+	@mkdir -p app/data app/results app/storage app/temp
 	@docker compose up -d --build
 	@echo "$(GREEN)✓ Cluster iniciado$(NC)"
 	@echo "$(YELLOW)Master API: http://localhost:8080$(NC)"
@@ -102,7 +102,7 @@ test-integration: up ## Ejecuta pruebas de integración con cluster activo
 clean: down ## Limpia binarios compilados y datos temporales
 	@echo "$(RED)Limpiando archivos temporales...$(NC)"
 	@rm -f master/master worker/worker client/client
-	@rm -rf results/* storage/*
+	@rm -rf app/results/* app/storage/* app/temp/*
 	@echo "$(GREEN)✓ Limpieza completada$(NC)"
 
 clean-all: clean ## Limpieza completa incluyendo imágenes Docker

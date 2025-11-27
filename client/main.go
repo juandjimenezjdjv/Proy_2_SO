@@ -186,7 +186,7 @@ func (c *Client) submitJob(jobFile string, watch bool) error {
 		return c.watchJob(job.ID)
 	}
 
-	fmt.Printf("\n%sTip:%s Para monitorear: %s./client -cmd status -id %s%s\n\n", ColorDim, ColorReset, ColorCyan, job.ID, ColorReset)
+	fmt.Printf("\n%sTip:%s Para monitorear: %s./client.exe -cmd status -id %s%s\n\n", ColorDim, ColorReset, ColorCyan, job.ID, ColorReset)
 	return nil
 }
 

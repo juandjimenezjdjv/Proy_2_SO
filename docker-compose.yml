@@ -21,9 +21,9 @@ services:
       - RESULTS_DIR=/app/results
     volumes:
       # Persistencia de datos entre reinicios
-      - ./data:/app/data
-      - ./results:/app/results
-      - ./storage:/app/storage
+      - ./app/data:/app/data
+      - ./app/results:/app/results
+      - ./app/storage:/app/storage
     networks:
       - minispark-net
     healthcheck:
@@ -48,10 +48,10 @@ services:
       - LOG_LEVEL=INFO
     volumes:
       # Compartir datos de entrada con master
-      - ./data:/app/data:ro
+      - ./app/data:/app/data:ro
       # Compartir temp y results entre todos los workers
-      - ./temp:/app/temp
-      - ./results:/app/results
+      - ./app/temp:/app/temp
+      - ./app/results:/app/results
     networks:
       - minispark-net
     depends_on:
@@ -73,9 +73,9 @@ services:
       - MAX_RETRIES=3
       - LOG_LEVEL=INFO
     volumes:
-      - ./data:/app/data:ro
-      - ./temp:/app/temp
-      - ./results:/app/results
+      - ./app/data:/app/data:ro
+      - ./app/temp:/app/temp
+      - ./app/results:/app/results
     networks:
       - minispark-net
     depends_on:
@@ -97,9 +97,9 @@ services:
       - MAX_RETRIES=3
       - LOG_LEVEL=INFO
     volumes:
-      - ./data:/app/data:ro
-      - ./temp:/app/temp
-      - ./results:/app/results
+      - ./app/data:/app/data:ro
+      - ./app/temp:/app/temp
+      - ./app/results:/app/results
     networks:
       - minispark-net
     depends_on:

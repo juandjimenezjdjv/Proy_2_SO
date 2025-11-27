@@ -574,14 +574,30 @@ func (e *Executor) readCSVFile(relativePath string) ([][]string, error) {
 	base := strings.TrimSuffix(normalizedPath, ext)
 
 	allRecords := make([][]string, 0)
-	partitionIdx := 0
 	foundAny := false
 
-	for {
+	// Buscar todas las particiones posibles (hasta 100 particiones)
+	for partitionIdx := 0; partitionIdx < 100; partitionIdx++ {
 		partPath := filepath.Join(baseDir, fmt.Sprintf("%s-part-%d%s", base, partitionIdx, ext))
 		file, err := os.Open(partPath)
 		if err != nil {
-			break // No más particiones
+			// Esta partición no existe, continuar buscando
+			// Pero si ya encontramos alguna y hay 5 consecutivas que faltan, asumir que terminamos
+			if foundAny && partitionIdx > 0 {
+				// Verificar si las siguientes 4 tampoco existen
+				allMissing := true
+				for checkIdx := partitionIdx + 1; checkIdx < partitionIdx+5 && checkIdx < 100; checkIdx++ {
+					checkPath := filepath.Join(baseDir, fmt.Sprintf("%s-part-%d%s", base, checkIdx, ext))
+					if _, checkErr := os.Stat(checkPath); checkErr == nil {
+						allMissing = false
+						break
+					}
+				}
+				if allMissing {
+					break // Ya no hay más particiones
+				}
+			}
+			continue // Intentar siguiente partición
 		}
 		foundAny = true
 
@@ -593,17 +609,16 @@ func (e *Executor) readCSVFile(relativePath string) ([][]string, error) {
 			return nil, fmt.Errorf("error leyendo partición %d: %w", partitionIdx, err)
 		}
 
-		// Skip header en particiones subsecuentes
-		if partitionIdx > 0 && len(records) > 0 {
+		// Skip header en particiones subsecuentes si ya tenemos datos
+		if len(allRecords) > 0 && len(records) > 0 {
 			records = records[1:]
 		}
 
 		allRecords = append(allRecords, records...)
-		partitionIdx++
 	}
 
 	if !foundAny {
-		return nil, fmt.Errorf("archivo no encontrado: %s", relativePath)
+		return nil, fmt.Errorf("archivo no encontrado: %s (intentado: %s y %s-part-*.%s)", relativePath, fullPath, base, ext)
 	}
 
 	return allRecords, nil

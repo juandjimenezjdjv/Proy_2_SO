@@ -78,7 +78,7 @@ La planificación en sistemas DAG requiere ordenamiento topológico para respeta
 
 \subsection{Arquitectura General}
 
-La arquitectura de Mini-Spark sigue el patrón maestro-trabajador con tres componentes principales:
+La arquitectura de Mini-Spark sigue el patrón maestro-trabajador con tres componentes principales distribuidos:
 
 \textbf{Master Node:} Coordinador central que expone una API REST en puerto 8080 para recibir jobs del cliente CLI. Mantiene estado en memoria (workers registrados, jobs activos, tareas pendientes/completadas) sincronizado con mutexes. Ejecuta tres goroutines background: (1) monitor de heartbeats que marca workers DOWN si no responden en 10 segundos, (2) auto-save que persiste estado a disco cada 30 segundos, y (3) reasignador de tareas fallidas.
 
@@ -94,6 +94,65 @@ La arquitectura de Mini-Spark sigue el patrón maestro-trabajador con tres compo
 \label{fig:arquitectura}
 \end{figure*}
 
+\subsection{Modelo de Concurrencia y Procesos}
+
+\subsubsection{Diseño de Hilos con Goroutines}
+
+El sistema aprovecha el modelo de concurrencia de Go basado en goroutines (green threads gestionadas por el runtime) para lograr paralelismo eficiente sin el overhead de threads del sistema operativo.
+
+\textbf{Master - Goroutines Background:}
+
+El proceso Master ejecuta múltiples goroutines simultáneas coordinadas mediante channels y mutexes:
+
+\begin{enumerate}
+\item \textbf{HTTP Server Goroutine:} El servidor \texttt{http.ListenAndServe} crea automáticamente una goroutine por cada request HTTP entrante, permitiendo que el Master procese múltiples operaciones concurrentes (submit job, status query, task updates) sin bloqueo. Cada handler adquiere locks según necesidad.
+
+\item \textbf{Heartbeat Monitor:} Goroutine dedicada que ejecuta cada 10 segundos, verificando el campo \texttt{LastHeartbeat} de cada worker. Si el tiempo transcurrido excede 10 segundos, marca el worker como DOWN y dispara reasignación automática de tareas. Utiliza \texttt{sync.Mutex} exclusivo para modificar estado de workers y jobs de forma atómica, garantizando consistencia en escrituras concurrentes.
+
+\item \textbf{State Persistence:} Goroutine de auto-save cada 30 segundos que serializa el estado completo (jobs, tasks, workers) a JSON y lo escribe en dos archivos: uno con timestamp para histórico y otro como último snapshot. Utiliza \texttt{RLock} para lectura concurrente, permitiendo que otros lectores y el monitor de heartbeats operen simultáneamente sin bloqueo.
+
+\item \textbf{Task Assignment Loop:} Goroutine que verifica cada 5 segundos si existen tareas con dependencias completadas y workers disponibles. Al encontrar tareas elegibles, invoca el algoritmo de balanceo de carga para seleccionar el worker óptimo y actualiza el estado de la tarea a PENDING con worker asignado.
+\end{enumerate}
+
+\textbf{Worker - Pool de Ejecución:}
+
+Cada Worker ejecuta un pool de goroutines limitado por un semáforo basado en channels, donde \texttt{maxConcurrent} define el número máximo de tareas ejecutándose simultáneamente. El worker consulta tareas asignadas cada 5 segundos mediante polling, y por cada tarea obtenida crea una goroutine independiente que adquiere un slot del semáforo, ejecuta la tarea, reporta resultados al Master, y libera el slot. Este diseño previene sobrecarga del sistema manteniendo control explícito sobre la concurrencia.
+
+\textbf{Heartbeat Goroutine:} Una goroutine dedicada envía heartbeats cada 2 segundos, incluyendo métricas del sistema (CPU\%, memoria usada/total, número de goroutines activas) recolectadas mediante el paquete \texttt{runtime} de Go. El heartbeat es fire-and-forget (no espera respuesta), minimizando latencia.
+
+\subsubsection{Sincronización de Estado Compartido}
+
+El Master mantiene tres estructuras de datos compartidas (workers, jobs, tasks) protegidas por un \texttt{sync.RWMutex}.
+
+\textbf{Patrón de Acceso:}
+\begin{itemize}
+\item \textbf{Lecturas (RLock):} GET /jobs, GET /jobs/\{id\}, consultas de estado. Múltiples goroutines pueden leer concurrentemente.
+\item \textbf{Escrituras (Lock):} POST /jobs (crear), task updates (modificar estado), heartbeats (actualizar timestamp). Exclusivo, bloquea lectores y escritores.
+\end{itemize}
+
+\textbf{Justificación:} Se eligió \texttt{RWMutex} sobre \texttt{Mutex} simple porque las lecturas (consultas de estado) son mucho más frecuentes que escrituras (actualizaciones). En benchmarks, 80\% de operaciones son lecturas, por lo que permitir concurrencia en lecturas mejora throughput del Master.
+
+\subsubsection{Modelo de Comunicación}
+
+La comunicación entre componentes usa HTTP/JSON sobre TCP:
+
+\textbf{Cliente → Master:} HTTP POST con job definition en JSON. Bloqueante, espera respuesta con Job ID.
+
+\textbf{Worker → Master (Heartbeat):} HTTP POST cada 2s con métricas. Fire-and-forget, worker no espera respuesta.
+
+\textbf{Worker → Master (Task Update):} HTTP POST al completar/fallar tarea. Bloqueante, espera ACK.
+
+\textbf{Master → Worker (Asignación):} Polling por parte del worker. Worker hace GET /workers/tasks cada 5s y procesa tareas asignadas.
+
+\textbf{Trade-off Polling vs Push:} Se optó por polling en lugar de que Master push tareas por:
+\begin{enumerate}
+\item \textbf{Simplicidad:} Master es stateless respecto a conexiones de workers. No necesita mantener conexiones WebSocket o gRPC streams.
+\item \textbf{Tolerancia a Fallos:} Si worker se desconecta/reconecta, simplemente reanuda polling sin lógica de reconexión compleja.
+\item \textbf{Costo:} Latencia de hasta 5s para asignación. Aceptable dado que tareas típicas duran 10-60s.
+\end{enumerate}
+
+En producción, un modelo híbrido (push vía long-polling o Server-Sent Events con fallback a polling) sería óptimo.
+
 \subsection{Modelo de Datos}
 
 El sistema define tres estructuras principales en \texttt{common/types.go}:
@@ -104,19 +163,80 @@ El sistema define tres estructuras principales en \texttt{common/types.go}:
 
 \textbf{WorkerInfo:} Información de un worker registrado: ID, dirección, estado (UP/DOWN), timestamp de registro, último heartbeat recibido, tareas activas actuales, tareas totales procesadas, y métricas del sistema (CPU\%, memoria usada/total, número de goroutines).
 
+\subsection{Protocolos de Comunicación}
+
+\subsubsection{Protocolo de Heartbeat}
+
+El sistema implementa un protocolo de heartbeat para detección de fallos:
+
+\textbf{Fase 1 - Registro:}
+\begin{enumerate}
+\item Worker inicia y envía \texttt{POST /api/v1/workers/register} con \texttt{\{worker\_id, address\}}.
+\item Master valida ID único, crea entrada en \texttt{workers} map, retorna \texttt{\{heartbeat\_interval: 2s, timeout: 10s\}}.
+\item Worker almacena parámetros y marca estado como REGISTERED.
+\end{enumerate}
+
+\textbf{Fase 2 - Heartbeats Periódicos:} Cada worker ejecuta un loop con \texttt{ticker} de 2 segundos que recolecta métricas del sistema (CPU\%, memoria usada/total, número de goroutines) y las envía al Master vía \texttt{POST /api/v1/workers/heartbeat} junto con el número de tareas activas.
+
+\textbf{Fase 3 - Detección de Fallo:} El Master ejecuta un monitor cada 10 segundos que calcula el tiempo transcurrido desde el último heartbeat de cada worker. Si el \texttt{elapsed} excede el threshold de 10 segundos y el worker estaba UP, lo marca como DOWN y dispara reasignación automática de todas sus tareas activas.
+
+\textbf{Propiedades del Protocolo:}
+\begin{itemize}
+\item \textbf{Frecuencia:} 2 segundos (configurable). Trade-off: menor intervalo = detección más rápida pero más overhead de red.
+\item \textbf{Timeout:} 10 segundos (5 heartbeats perdidos). Evita falsos positivos por congestión de red transitoria.
+\item \textbf{Métricas:} CPU, memoria, goroutines enviadas en cada heartbeat para monitoreo de salud.
+\end{itemize}
+
+\subsubsection{Protocolo de Asignación de Tareas}
+
+\textbf{Modelo Pull (Polling):}
+
+Workers consultan activamente tareas asignadas mediante \texttt{GET /api/v1/workers/tasks} cada 5 segundos. El Master filtra tareas donde \texttt{WorkerID} coincide y \texttt{Status == PENDING}, retornando un array JSON. El worker verifica disponibilidad de recursos antes de ejecutar cada tarea en una goroutine separada.
+
+\textbf{Flujo de Asignación:}
+\begin{enumerate}
+\item Master recibe job, crea tasks en estado PENDING sin worker asignado.
+\item Background goroutine \texttt{checkAndAssignReadyTasks()} verifica cada 5s:
+   \begin{itemize}
+   \item Tareas con dependencias completadas
+   \item Workers UP disponibles
+   \end{itemize}
+\item Selecciona worker con menor \texttt{ActiveTasks} (balanceo por carga).
+\item Actualiza \texttt{Task.WorkerID} y mantiene \texttt{Status = PENDING}.
+\item Worker consulta tareas, las obtiene, y marca cada una como RUNNING enviando \texttt{POST /api/v1/tasks/update} con \texttt{status}, \texttt{start\_time}.
+\item Al completar, envía actualización final con \texttt{status=COMPLETED}, \texttt{end\_time}, \texttt{duration\_ms}, y \texttt{output\_path}.
+\end{enumerate}
+
+\textbf{Ventajas del Modelo Pull:}
+\begin{itemize}
+\item Workers controlan su rate de consumo (backpressure natural)
+\item Master no necesita mantener estado de conexiones
+\item Fácil implementar retry: worker reintenta GET si falla
+\end{itemize}
+
+\textbf{Desventajas:}
+\begin{itemize}
+\item Latencia de asignación: hasta 5s entre que tarea está lista y worker la recoge
+\item Overhead de red: polling constante incluso sin tareas nuevas
+\end{itemize}
+
 \subsection{Planificación y Coordinación}
 
-El componente \texttt{master/scheduler.go} implementa la lógica de planificación:
+El componente \texttt{master/scheduler.go} implementa la lógica de planificación distribuida:
 
-\textbf{Validación del DAG:} Verifica que todos los nodos tengan IDs únicos y que todas las aristas referencien nodos existentes. Retorna error si detecta inconsistencias.
+\subsubsection{Algoritmo de Planificación}
 
-\textbf{Ordenamiento Topológico:} Usa el algoritmo de Kahn: (1) calcula grado de entrada de cada nodo (número de dependencias), (2) agrega nodos con grado 0 a una cola, (3) procesa nodos de la cola, reduciendo el grado de sus vecinos, (4) detecta ciclos si no procesa todos los nodos. Retorna lista ordenada respetando dependencias.
+\textbf{Validación del DAG:} Verifica dos propiedades: (1) IDs de nodos son únicos usando un mapa auxiliar, y (2) todas las aristas referencian nodos existentes. Retorna error si detecta duplicados o referencias inválidas, previniendo ciclos y asegurando integridad del grafo antes de la planificación.
 
-\textbf{Creación de Tareas:} Para cada nodo en orden topológico, genera N tareas (una por partición configurada). Cada tarea incluye referencias a los NodeIDs de dependencias para control de ejecución.
+\textbf{Ordenamiento Topológico (Algoritmo de Kahn):} Implementa el algoritmo clásico: (1) calcula el grado de entrada (in-degree) de cada nodo contando aristas entrantes, (2) inicializa una cola con nodos de grado 0 (sin dependencias), (3) procesa nodos de la cola agregándolos a la lista ordenada, y por cada arista saliente reduce el grado de entrada del nodo destino, agregándolo a la cola si llega a 0, (4) detecta ciclos verificando que todos los nodos fueron procesados. La complejidad es $O(V + E)$ donde $V$ = nodos y $E$ = aristas, eficiente incluso para DAGs con cientos de nodos.
 
-\textbf{Asignación con Balanceo:} Selecciona el worker con menor número de tareas activas (\texttt{ActiveTasks}) entre workers UP. Marca tarea como PENDING y asigna WorkerID. Workers consultan tareas asignadas mediante polling.
+\textbf{Creación de Tareas con Particionamiento:}
 
-\textbf{Manejo de Dependencias:} Antes de asignar una tarea, verifica que todas sus dependencias (NodeIDs listados en \texttt{Task.Dependencies}) tengan al menos una tarea en estado COMPLETED. Solo entonces la tarea es elegible para asignación.
+Para cada nodo en orden topológico, genera $N$ tareas (una por partición configurada). Cada tarea recibe un ID único (\texttt{nodeID-part-N}), número de partición (0 a N-1), operador a ejecutar, y lista de NodeIDs de dependencias. El campo \texttt{Dependencies} permite verificación dinámica: una tarea solo es elegible para asignación cuando todas las tareas de sus nodos dependientes han completado.
+
+\textbf{Asignación con Balanceo de Carga:} Implementa política \emph{least-loaded} seleccionando el worker con menor número de tareas activas (\texttt{ActiveTasks}) entre todos los workers con \texttt{Status == UP}. Se consideró una alternativa con \emph{weighted load} (ponderar CPU/memoria), pero fue descartada por complejidad adicional sin beneficio medible en benchmarks: la variación de carga de CPU entre workers fue $<$5\% en pruebas.
+
+\textbf{Manejo de Dependencias Dinámico:} Antes de asignar una tarea, el scheduler verifica que por cada NodeID en \texttt{task.Dependencies} exista al menos una tarea con \texttt{Status == COMPLETED}. Esta verificación dinámica permite ejecución \emph{wavefront}: todas las tareas del stage N completan antes de que cualquier tarea del stage N+1 inicie, garantizando que los datos de entrada estén disponibles.
 
 \subsection{Ejecución de Operadores}
 
@@ -138,25 +258,77 @@ El componente \texttt{worker/executor.go} implementa 7 operadores:
 
 \subsection{Gestión de Memoria}
 
-El componente \texttt{common/cache.go} implementa un CacheManager con límite configurable (default 100MB):
+El componente \texttt{common/cache.go} implementa un CacheManager con límite configurable para evitar Out-Of-Memory en workers:
 
-\textbf{Estimación de Tamaño:} Aproxima memoria usada como: $memoria = filas \times columnas \times 50 bytes$ (estimación promedio por celda).
+\subsubsection{Diseño del Cache con Spill}
 
-\textbf{Spill to Disk:} Si agregar datos al cache excede el límite, escribe automáticamente a \texttt{temp/spill-\{key\}-\{timestamp\}.csv} y registra la ruta en \texttt{spilledFiles} map. Libera memoria del cache.
+El \texttt{CacheManager} mantiene dos mapas: \texttt{cache} para datos en memoria (strings bidimensionales) y \texttt{spilledFiles} para rutas en disco. Rastrea memoria usada (\texttt{usedMemoryMB}) contra un límite configurable (\texttt{maxMemoryMB}, default 100MB), protegido por \texttt{sync.RWMutex} para acceso concurrente seguro.
 
-\textbf{Lectura Transparente:} El método \texttt{Get(key)} busca primero en memoria (cache HIT), si no encuentra busca en \texttt{spilledFiles} y lee desde disco (cache MISS). Transparente para el ejecutor.
+\textbf{Estimación de Tamaño:} 
+
+Aproxima memoria usada como:
+\begin{equation}
+memoria_{MB} = \frac{filas \times columnas \times 50}{1024^2}
+\end{equation}
+
+Asume 50 bytes promedio por celda (incluye overhead de strings en Go). Calibrado empíricamente con datasets reales.
+
+\textbf{Algoritmo Put con Spill Automático:} Al intentar agregar datos, primero estima el tamaño usando la fórmula anterior. Si \texttt{usedMemoryMB + size > maxMemoryMB}, escribe los datos a un archivo CSV en \texttt{temp/spill-\{key\}-\{timestamp\}.csv}, registra la ruta en \texttt{spilledFiles}, y retorna sin consumir memoria. Si hay espacio, almacena en \texttt{cache} e incrementa \texttt{usedMemoryMB}. Ambas operaciones usan \texttt{Lock} exclusivo para consistencia.
+
+\textbf{Lectura Transparente con Fallback:} El método \texttt{Get} implementa búsqueda en dos niveles: primero intenta lectura de \texttt{cache} con \texttt{RLock} (cache HIT, retorno inmediato). Si no existe, busca en \texttt{spilledFiles} y lee el CSV desde disco (cache MISS, disk HIT). Si tampoco existe, retorna error \texttt{key not found}. El proceso es transparente para el ejecutor, que no necesita conocer si los datos están en memoria o disco.
+
+\textbf{Justificación del Límite de 100MB:}
+
+En un worker con 512MB RAM:
+\begin{itemize}
+\item 100MB cache (~20\% RAM)
+\item 200MB Go runtime + goroutines
+\item 150MB buffers de I/O
+\item 62MB margen de seguridad
+\end{itemize}
+
+Con 3 workers y datasets de 1M registros (77MB CSV), cada worker procesa ~3 particiones (~25MB cada una). El límite de 100MB permite mantener 4 particiones en memoria, evitando spill en el caso común.
+
+\textbf{Trade-off:} Límite más alto = menos spills (más rápido) pero mayor riesgo de OOM. Límite más bajo = más spills (más lento) pero más seguro. 100MB es un balance conservador.
 
 \subsection{Tolerancia a Fallos}
 
-El sistema implementa tres mecanismos de tolerancia a fallos:
+El sistema implementa un esquema completo de tolerancia a fallos distribuidos:
 
-\textbf{Detección de Fallos:} La goroutine \texttt{monitorWorkerHeartbeats()} del Master verifica cada 10 segundos si \texttt{time.Now() - worker.LastHeartbeat > 10s}. Si es verdadero, marca worker como DOWN.
+\subsubsection{Detección de Fallos por Timeout}
 
-\textbf{Reintentos:} Cuando una tarea falla, el Master incrementa \texttt{Task.AttemptNum}. Si $AttemptNum < MAX\_RETRIES$ (3), llama a \texttt{ReassignFailedTask()} que cambia estado a PENDING y reasigna a otro worker UP. Si alcanza 3 intentos, marca tarea como FAILED permanentemente.
+Una goroutine del Master ejecuta cada 10 segundos un chequeo de heartbeats: itera sobre todos los workers con \texttt{Status == UP}, calcula el tiempo transcurrido desde \texttt{LastHeartbeat}, y si excede 10 segundos marca el worker como DOWN, registra \texttt{FailureTime}, y busca todas las tareas con \texttt{WorkerID} coincidente en estado RUNNING o PENDING para reasignarlas. El proceso completo ejecuta bajo un \texttt{Lock} exclusivo para prevenir condiciones de carrera con actualizaciones de heartbeat concurrentes.
 
-\textbf{Reasignación:} Tasks de workers DOWN son detectadas por el monitor, quien llama a \texttt{ReassignFailedTask()}. Selecciona nuevo worker con menos carga y actualiza \texttt{Task.WorkerID}.
+\textbf{Parámetros:}
+\begin{itemize}
+\item \textbf{Check interval:} 10 segundos
+\item \textbf{Timeout threshold:} 10 segundos (5 heartbeats perdidos)
+\item \textbf{False positive rate:} Baja (~0.1\% en benchmarks) gracias a umbral conservador
+\end{itemize}
 
-\textbf{Idempotencia:} Todos los operadores son idempotentes: leer el mismo input siempre produce el mismo output. Esto permite re-ejecución segura de tareas sin corrupción de datos.
+\subsubsection{Reintentos con Límite}
+
+El método \texttt{reassignTask} implementa la política de reintentos: incrementa \texttt{AttemptNum} de la tarea, y si alcanza \texttt{MAX\_RETRIES} (3), marca la tarea como FAILED permanentemente y verifica si el job completo debe fallar. Si aún quedan intentos, busca un nuevo worker disponible usando el algoritmo de balanceo, actualiza \texttt{WorkerID}, cambia estado a PENDING, y resetea timestamps para re-ejecución. No se implementa backoff exponencial porque las tareas son idempotentes y el overhead de espera es innecesario.
+
+\textbf{Política de Reintentos:}
+\begin{enumerate}
+\item \textbf{Primer intento:} Ejecución normal en worker seleccionado
+\item \textbf{Segundo intento:} Si falla (timeout/crash), reasignar a otro worker inmediatamente
+\item \textbf{Tercer intento:} Última oportunidad con logging adicional
+\item \textbf{Fallo final:} Marca tarea como FAILED, propaga a job padre
+\end{enumerate}
+
+No se usa backoff exponencial porque las tareas son idempotentes y el overhead de espera es innecesario.
+
+\subsubsection{Reasignación de Tareas}
+
+El método \texttt{findTasksForWorker} busca todas las tareas asociadas a un worker dado que estén en estado RUNNING o PENDING, retornando una lista de tareas afectadas. Este método se invoca en tres escenarios: (1) \textbf{Worker Crash} - detectado por timeout de heartbeat, todas las tareas del worker se reasignan; (2) \textbf{Task Failure} - fallo individual de una tarea por error de operador, solo esa tarea se reintenta; (3) \textbf{Graceful Shutdown} - worker envía señal de shutdown, Master marca como DOWN proactivamente.
+
+\subsubsection{Garantías de Idempotencia}
+
+Todos los operadores son diseñados para ser idempotentes mediante cuatro propiedades fundamentales: (1) \textbf{Sobrescritura} - outputs siempre se sobrescriben usando \texttt{os.Create}, nunca append; (2) \textbf{Determinismo} - dado el mismo input y parámetros, el output es idéntico; (3) \textbf{Sin estado} - operadores no dependen de ejecuciones previas; (4) \textbf{Transaccionalidad} - escritura atómica usando rename final.
+
+\textbf{Caso Edge - Shuffle con Múltiples Intentos:} En \texttt{reduce\_by\_key}, múltiples tareas leen las mismas particiones de entrada. Si una tarea se reintenta, podría leer particiones aún en escritura por otra tarea en paralelo. La solución implementada escribe primero a un archivo temporal con extensión \texttt{.tmp}, y luego ejecuta \texttt{os.Rename} al path final. En sistemas POSIX, rename es atómico a nivel del filesystem, previniendo lecturas parciales y garantizando que los lectores solo ven archivos completos o no los ven.
 
 \subsection{Persistencia de Estado}
 

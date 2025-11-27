@@ -39,8 +39,8 @@ func LoadConfig() *Config {
 		HeartbeatTimeoutSec: getEnvInt("HEARTBEAT_TIMEOUT_SEC", 10),
 		WorkerThreads:       getEnvInt("WORKER_THREADS", 4),
 		MaxRetries:          getEnvInt("MAX_RETRIES", 3),
-		DataDir:             getEnv("DATA_DIR", "./data"),
-		ResultsDir:          getEnv("RESULTS_DIR", "./results"),
+		DataDir:             getEnv("DATA_DIR", "./app/data"),
+		ResultsDir:          getEnv("RESULTS_DIR", "./app/results"),
 		LogLevel:            LogLevel(getEnv("LOG_LEVEL", "INFO")),
 	}
 }
