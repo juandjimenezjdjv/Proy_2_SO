@@ -26,6 +26,9 @@ type Worker struct {
 	activeTasks map[string]*common.Task
 	tasksMutex  sync.RWMutex
 
+	// Métricas
+	metricsCollector *common.MetricsCollector
+
 	// Control
 	heartbeatTicker *time.Ticker
 	shutdownChan    chan bool
@@ -41,14 +44,15 @@ func NewWorker(config *common.Config) *Worker {
 	address := fmt.Sprintf("worker-%d:8081", time.Now().Unix()%1000)
 
 	return &Worker{
-		id:            workerID,
-		address:       address,
-		masterAddress: fmt.Sprintf("http://%s:%d", config.MasterHost, config.MasterPort),
-		config:        config,
-		logger:        common.NewLogger("WORKER", config.LogLevel),
-		activeTasks:   make(map[string]*common.Task),
-		shutdownChan:  make(chan bool),
-		registered:    false,
+		id:               workerID,
+		address:          address,
+		masterAddress:    fmt.Sprintf("http://%s:%d", config.MasterHost, config.MasterPort),
+		config:           config,
+		logger:           common.NewLogger("WORKER", config.LogLevel),
+		activeTasks:      make(map[string]*common.Task),
+		metricsCollector: common.NewMetricsCollector(),
+		shutdownChan:     make(chan bool),
+		registered:       false,
 	}
 }
 
@@ -63,6 +67,9 @@ func (w *Worker) Start() error {
 
 	// Iniciar envío de heartbeats
 	go w.startHeartbeat()
+
+	// Iniciar polling de tareas
+	go w.startTaskPolling()
 
 	// Esperar señal de shutdown
 	w.waitForShutdown()
@@ -135,9 +142,13 @@ func (w *Worker) sendHeartbeat() error {
 	activeTasks := len(w.activeTasks)
 	w.tasksMutex.RUnlock()
 
+	// Recolectar métricas del sistema
+	metrics := w.metricsCollector.Collect()
+
 	req := common.HeartbeatRequest{
 		WorkerID:    w.id,
 		ActiveTasks: activeTasks,
+		Metrics:     metrics,
 	}
 
 	body, err := json.Marshal(req)
@@ -156,44 +167,125 @@ func (w *Worker) sendHeartbeat() error {
 		return fmt.Errorf("master rechazó heartbeat: status %d", resp.StatusCode)
 	}
 
-	w.logger.Debug("Heartbeat enviado (tareas activas: %d)", activeTasks)
+	w.logger.Debug("Heartbeat enviado (tareas activas: %d, %s)", activeTasks, metrics.FormatMetrics())
 	return nil
 }
 
-// executeTask ejecuta una tarea asignada (placeholder por ahora)
-func (w *Worker) executeTask(task *common.Task) error {
-	w.logger.Info("Ejecutando tarea %s (operador: %s)", task.ID, task.Operator)
-
-	// Agregar a tareas activas
-	w.tasksMutex.Lock()
-	w.activeTasks[task.ID] = task
-	w.tasksMutex.Unlock()
-
-	// Simular ejecución (placeholder)
+// startTaskPolling inicia el polling de tareas desde el master
+func (w *Worker) startTaskPolling() {
+	// Esperar un poco para que el heartbeat se establezca
 	time.Sleep(2 * time.Second)
 
-	// Remover de tareas activas
-	w.tasksMutex.Lock()
-	delete(w.activeTasks, task.ID)
-	w.tasksMutex.Unlock()
+	ticker := time.NewTicker(5 * time.Second) // Poll cada 5 segundos
+	defer ticker.Stop()
+
+	w.logger.Info("Iniciando polling de tareas...")
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := w.pollAndExecuteTasks(); err != nil {
+				w.logger.Error("Error en polling de tareas: %v", err)
+			}
+		case <-w.shutdownChan:
+			w.logger.Info("Deteniendo polling de tareas")
+			return
+		}
+	}
+}
+
+// pollAndExecuteTasks obtiene y ejecuta tareas asignadas desde el master
+func (w *Worker) pollAndExecuteTasks() error {
+	// Obtener tareas asignadas
+	url := fmt.Sprintf("%s/api/v1/workers/tasks?worker_id=%s", w.masterAddress, w.id)
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("error obteniendo tareas: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("master devolvió status %d", resp.StatusCode)
+	}
+
+	var tasks []*common.Task
+	if err := json.NewDecoder(resp.Body).Decode(&tasks); err != nil {
+		return fmt.Errorf("error decodificando tareas: %v", err)
+	}
+
+	// Ejecutar cada tarea en una goroutine
+	for _, task := range tasks {
+		// Verificar si ya está siendo ejecutada
+		w.tasksMutex.RLock()
+		_, exists := w.activeTasks[task.ID]
+		w.tasksMutex.RUnlock()
+
+		if exists {
+			continue // Ya está en ejecución
+		}
+
+		w.logger.Info("Nueva tarea recibida: %s (operador: %s)", task.ID, task.Operator)
+
+		// Marcar como activa
+		w.tasksMutex.Lock()
+		w.activeTasks[task.ID] = task
+		w.tasksMutex.Unlock()
+
+		// Ejecutar en goroutine
+		go func(t *common.Task) {
+			if err := w.executeTask(t); err != nil {
+				w.logger.Error("Error ejecutando tarea %s: %v", t.ID, err)
+			}
+
+			// Remover de tareas activas
+			w.tasksMutex.Lock()
+			delete(w.activeTasks, t.ID)
+			w.tasksMutex.Unlock()
+		}(task)
+	}
+
+	return nil
+}
+
+// executeTask ejecuta una tarea asignada usando el executor
+func (w *Worker) executeTask(task *common.Task) error {
+	startTime := time.Now()
+	w.logger.Info("Ejecutando tarea %s (operador: %s)", task.ID, task.Operator)
+
+	// Reportar inicio
+	if err := w.reportTaskStatus(task.ID, common.TaskStatusRunning, "", 0); err != nil {
+		w.logger.Error("Error reportando inicio de tarea: %v", err)
+	}
+
+	// Ejecutar usando el executor
+	err := ExecuteTask(task)
+	duration := time.Since(startTime).Milliseconds()
+
+	if err != nil {
+		w.logger.Error("Error en ejecución de tarea %s: %v (duración: %dms)", task.ID, err, duration)
+		// Reportar falla
+		w.reportTaskStatus(task.ID, common.TaskStatusFailed, err.Error(), duration)
+		return err
+	}
 
 	// Reportar completitud
-	if err := w.reportTaskStatus(task.ID, common.TaskStatusCompleted, ""); err != nil {
+	if err := w.reportTaskStatus(task.ID, common.TaskStatusCompleted, "", duration); err != nil {
 		w.logger.Error("Error reportando tarea completada: %v", err)
 		return err
 	}
 
-	w.logger.Info("Tarea %s completada exitosamente", task.ID)
+	w.logger.Info("Tarea %s completada exitosamente (duración: %dms)", task.ID, duration)
 	return nil
 }
 
 // reportTaskStatus reporta el estado de una tarea al master
-func (w *Worker) reportTaskStatus(taskID string, status common.TaskStatus, errorMsg string) error {
+func (w *Worker) reportTaskStatus(taskID string, status common.TaskStatus, errorMsg string, durationMs int64) error {
 	req := common.TaskUpdateRequest{
-		TaskID:   taskID,
-		Status:   status,
-		Progress: 100.0,
-		Error:    errorMsg,
+		TaskID:     taskID,
+		Status:     status,
+		Progress:   100.0,
+		Error:      errorMsg,
+		DurationMs: durationMs,
 	}
 
 	body, err := json.Marshal(req)

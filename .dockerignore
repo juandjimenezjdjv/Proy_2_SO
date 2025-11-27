@@ -1,0 +1,33 @@
+# Archivos y directorios a excluir del contexto de build de Docker
+
+# Directorios de datos
+data/
+results/
+storage/
+temp/
+
+# Git
+.git/
+.gitignore
+
+# Binarios compilados
+master/master
+worker/worker
+client/client
+*.exe
+
+# Archivos de prueba
+*_test.go
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# Docker
+docker-compose.yml
+.dockerignore
+
+# Documentación
+*.md
+*.pdf

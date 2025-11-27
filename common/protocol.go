@@ -45,8 +45,9 @@ type RegisterWorkerResponse struct {
 
 // HeartbeatRequest es el mensaje de heartbeat de un worker
 type HeartbeatRequest struct {
-	WorkerID    string `json:"worker_id"`
-	ActiveTasks int    `json:"active_tasks"`
+	WorkerID    string         `json:"worker_id"`
+	ActiveTasks int            `json:"active_tasks"`
+	Metrics     *SystemMetrics `json:"metrics,omitempty"`
 }
 
 // HeartbeatResponse es la respuesta a un heartbeat
@@ -69,10 +70,11 @@ type AssignTaskResponse struct {
 
 // TaskUpdateRequest es el mensaje de actualización de estado de una tarea
 type TaskUpdateRequest struct {
-	TaskID   string     `json:"task_id"`
-	Status   TaskStatus `json:"status"`
-	Progress float64    `json:"progress"`
-	Error    string     `json:"error,omitempty"`
+	TaskID     string     `json:"task_id"`
+	Status     TaskStatus `json:"status"`
+	Progress   float64    `json:"progress"`
+	Error      string     `json:"error,omitempty"`
+	DurationMs int64      `json:"duration_ms,omitempty"`
 }
 
 // TaskUpdateResponse es la respuesta a una actualización de tarea

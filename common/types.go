@@ -10,6 +10,12 @@ const (
 	JobStatusRunning   JobStatus = "RUNNING"
 	JobStatusFailed    JobStatus = "FAILED"
 	JobStatusSucceeded JobStatus = "SUCCEEDED"
+
+	// Aliases adicionales
+	JobPending   = JobStatusAccepted
+	JobRunning   = JobStatusRunning
+	JobCompleted = JobStatusSucceeded
+	JobFailed    = JobStatusFailed
 )
 
 // TaskStatus representa el estado de una tarea individual
@@ -20,6 +26,13 @@ const (
 	TaskStatusRunning   TaskStatus = "RUNNING"
 	TaskStatusCompleted TaskStatus = "COMPLETED"
 	TaskStatusFailed    TaskStatus = "FAILED"
+
+	// Aliases adicionales
+	TaskPending   = TaskStatusPending
+	TaskAssigned  = TaskStatusPending
+	TaskRunning   = TaskStatusRunning
+	TaskCompleted = TaskStatusCompleted
+	TaskFailed    = TaskStatusFailed
 )
 
 // OperatorType define los tipos de operadores soportados
@@ -40,12 +53,18 @@ type WorkerStatus string
 const (
 	WorkerStatusUp   WorkerStatus = "UP"
 	WorkerStatusDown WorkerStatus = "DOWN"
+
+	// Aliases adicionales
+	WorkerUp   = WorkerStatusUp
+	WorkerDown = WorkerStatusDown
 )
 
 // DAGNode representa un nodo (operador) en el grafo de ejecución
 type DAGNode struct {
 	ID         string                 `json:"id"`
-	Operator   OperatorType           `json:"op"`
+	Operator   OperatorType           `json:"operator"`
+	InputPaths []string               `json:"input_paths,omitempty"`
+	OutputPath string                 `json:"output_path,omitempty"`
 	Path       string                 `json:"path,omitempty"`
 	Function   string                 `json:"fn,omitempty"`
 	Key        string                 `json:"key,omitempty"`
@@ -72,6 +91,10 @@ type Job struct {
 	DAG         DAG       `json:"dag"`
 	Parallelism int       `json:"parallelism"`
 	Status      JobStatus `json:"status"`
+	Tasks       []*Task   `json:"tasks,omitempty"`
+	SubmittedAt time.Time `json:"submitted_at"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	Progress    float64   `json:"progress"`
@@ -79,32 +102,38 @@ type Job struct {
 
 // Task representa una unidad de ejecución asignada a un worker
 type Task struct {
-	ID          string                 `json:"id"`
-	JobID       string                 `json:"job_id"`
-	NodeID      string                 `json:"node_id"`
-	Operator    OperatorType           `json:"operator"`
-	Partition   int                    `json:"partition"`
-	AttemptNum  int                    `json:"attempt_num"`
-	Status      TaskStatus             `json:"status"`
-	WorkerID    string                 `json:"worker_id,omitempty"`
-	Input       []string               `json:"input,omitempty"`
-	Output      string                 `json:"output,omitempty"`
-	Params      map[string]interface{} `json:"params,omitempty"`
-	CreatedAt   time.Time              `json:"created_at"`
-	StartedAt   *time.Time             `json:"started_at,omitempty"`
-	CompletedAt *time.Time             `json:"completed_at,omitempty"`
-	Error       string                 `json:"error,omitempty"`
+	ID              string                 `json:"id"`
+	JobID           string                 `json:"job_id"`
+	NodeID          string                 `json:"node_id"`
+	Operator        OperatorType           `json:"operator"`
+	InputPaths      []string               `json:"input_paths,omitempty"`
+	OutputPath      string                 `json:"output_path,omitempty"`
+	Partition       int                    `json:"partition"`
+	TotalPartitions int                    `json:"total_partitions"`
+	Dependencies    []string               `json:"dependencies,omitempty"`
+	AttemptNum      int                    `json:"attempt_num"`
+	Status          TaskStatus             `json:"status"`
+	WorkerID        string                 `json:"worker_id,omitempty"`
+	Input           []string               `json:"input,omitempty"`
+	Output          string                 `json:"output,omitempty"`
+	Params          map[string]interface{} `json:"params,omitempty"`
+	CreatedAt       time.Time              `json:"created_at"`
+	StartedAt       *time.Time             `json:"started_at,omitempty"`
+	CompletedAt     *time.Time             `json:"completed_at,omitempty"`
+	DurationMs      int64                  `json:"duration_ms,omitempty"`
+	Error           string                 `json:"error,omitempty"`
 }
 
 // WorkerInfo contiene información sobre un worker registrado
 type WorkerInfo struct {
-	ID            string       `json:"id"`
-	Address       string       `json:"address"`
-	Status        WorkerStatus `json:"status"`
-	RegisteredAt  time.Time    `json:"registered_at"`
-	LastHeartbeat time.Time    `json:"last_heartbeat"`
-	ActiveTasks   int          `json:"active_tasks"`
-	TotalTasks    int          `json:"total_tasks"`
+	ID            string         `json:"id"`
+	Address       string         `json:"address"`
+	Status        WorkerStatus   `json:"status"`
+	RegisteredAt  time.Time      `json:"registered_at"`
+	LastHeartbeat time.Time      `json:"last_heartbeat"`
+	ActiveTasks   int            `json:"active_tasks"`
+	TotalTasks    int            `json:"total_tasks"`
+	Metrics       *SystemMetrics `json:"metrics,omitempty"`
 }
 
 // JobMetrics contiene métricas de ejecución de un job

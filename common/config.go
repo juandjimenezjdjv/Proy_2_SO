@@ -5,6 +5,11 @@ import (
 	"strconv"
 )
 
+// Constantes del sistema
+const (
+	MAX_RETRIES = 3 // Número máximo de reintentos para tareas fallidas
+)
+
 // Config contiene la configuración compartida del sistema
 type Config struct {
 	// Configuración del Master

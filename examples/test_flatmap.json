@@ -1,0 +1,61 @@
+{
+  "id": "test-flatmap-wordcount",
+  "name": "Test FlatMap WordCount",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read",
+        "operator": "read_csv",
+        "input_paths": ["input.csv"],
+        "output_path": "temp/read-output.csv",
+        "partitions": 2
+      },
+      {
+        "id": "tokenize",
+        "operator": "flat_map",
+        "input_paths": ["temp/read-output.csv"],
+        "output_path": "temp/tokenized.csv",
+        "partitions": 2,
+        "params": {
+          "fn": "split_words"
+        }
+      },
+      {
+        "id": "lowercase",
+        "operator": "map",
+        "input_paths": ["temp/tokenized.csv"],
+        "output_path": "temp/lowercase.csv",
+        "partitions": 2,
+        "params": {
+          "fn": "to_lower"
+        }
+      },
+      {
+        "id": "count",
+        "operator": "reduce_by_key",
+        "input_paths": ["temp/lowercase.csv"],
+        "output_path": "results/wordcount-result.csv",
+        "partitions": 1,
+        "params": {
+          "key": "word",
+          "fn": "count"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "read",
+        "to": "tokenize"
+      },
+      {
+        "from": "tokenize",
+        "to": "lowercase"
+      },
+      {
+        "from": "lowercase",
+        "to": "count"
+      }
+    ]
+  },
+  "parallelism": 2
+}

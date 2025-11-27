@@ -1,0 +1,43 @@
+{
+  "job_id": "test-benchmark-wordcount",
+  "stages": [
+    {
+      "stage_id": "read",
+      "operator": "read_csv",
+      "config": {
+        "input_path": "./benchmarks/data/wordcount_test.csv",
+        "partitions": 2
+      },
+      "dependencies": []
+    },
+    {
+      "stage_id": "tokenize",
+      "operator": "flat_map",
+      "config": {
+        "function": "split_words",
+        "input_column": "text"
+      },
+      "dependencies": ["read"]
+    },
+    {
+      "stage_id": "lowercase",
+      "operator": "map",
+      "config": {
+        "function": "lowercase",
+        "input_column": "word",
+        "output_column": "word"
+      },
+      "dependencies": ["tokenize"]
+    },
+    {
+      "stage_id": "count",
+      "operator": "reduce_by_key",
+      "config": {
+        "key_column": "word",
+        "operation": "sum",
+        "output_path": "./benchmarks/results/test_wordcount_result.csv"
+      },
+      "dependencies": ["lowercase"]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "user-orders-join",
+  "name": "User Orders Join Test",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read-users",
+        "operator": "read_csv",
+        "input_paths": ["users.csv"],
+        "output_path": "temp/users-read.csv",
+        "partitions": 2
+      },
+      {
+        "id": "read-orders",
+        "operator": "read_csv",
+        "input_paths": ["orders.csv"],
+        "output_path": "temp/orders-read.csv",
+        "partitions": 2
+      },
+      {
+        "id": "join-data",
+        "operator": "join",
+        "input_paths": ["temp/users-read.csv", "temp/orders-read.csv"],
+        "output_path": "results/joined-output.csv",
+        "partitions": 2,
+        "params": {
+          "join_key": "user_id",
+          "join_type": "inner"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "read-users",
+        "to": "join-data"
+      },
+      {
+        "from": "read-orders",
+        "to": "join-data"
+      }
+    ]
+  }
+}

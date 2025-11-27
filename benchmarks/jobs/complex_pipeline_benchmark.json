@@ -1,0 +1,56 @@
+{
+  "job_id": "benchmark-complex-1M",
+  "stages": [
+    {
+      "stage_id": "read",
+      "operator": "read_csv",
+      "config": {
+        "input_path": "sales_1M.csv",
+        "partitions": 8
+      },
+      "dependencies": []
+    },
+    {
+      "stage_id": "add_revenue",
+      "operator": "map",
+      "config": {
+        "function": "multiply",
+        "input_columns": ["quantity", "price"],
+        "output_column": "revenue"
+      },
+      "dependencies": ["read"]
+    },
+    {
+      "stage_id": "filter_active",
+      "operator": "filter",
+      "config": {
+        "column": "status",
+        "operator": "ne",
+        "value": "cancelled"
+      },
+      "dependencies": ["add_revenue"]
+    },
+    {
+      "stage_id": "revenue_by_product",
+      "operator": "reduce_by_key",
+      "config": {
+        "key_column": "product",
+        "operation": "sum",
+        "value_column": "revenue",
+        "output_path": "results/product_revenue.csv"
+      },
+      "dependencies": ["filter_active"]
+    },
+    {
+      "stage_id": "revenue_by_category",
+      "operator": "reduce_by_key",
+      "config": {
+        "key_column": "category",
+        "operation": "sum",
+        "value_column": "revenue",
+        "output_path": "results/category_revenue.csv"
+      },
+      "dependencies": ["filter_active"]
+    }
+  ]
+}

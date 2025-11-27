@@ -1,0 +1,42 @@
+{
+  "job_id": "benchmark-filter-1M",
+  "stages": [
+    {
+      "stage_id": "read",
+      "operator": "read_csv",
+      "config": {
+        "input_path": "sales_1M.csv",
+        "partitions": 8
+      },
+      "dependencies": []
+    },
+    {
+      "stage_id": "filter_high_value",
+      "operator": "filter",
+      "config": {
+        "column": "price",
+        "operator": "gt",
+        "value": "500"
+      },
+      "dependencies": ["read"]
+    },
+    {
+      "stage_id": "filter_electronics",
+      "operator": "filter",
+      "config": {
+        "column": "category",
+        "operator": "eq",
+        "value": "electronics"
+      },
+      "dependencies": ["filter_high_value"]
+    },
+    {
+      "stage_id": "write",
+      "operator": "write_csv",
+      "config": {
+        "output_path": "results/filtered_sales.csv"
+      },
+      "dependencies": ["filter_electronics"]
+    }
+  ]
+}

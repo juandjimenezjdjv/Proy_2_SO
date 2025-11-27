@@ -1,0 +1,56 @@
+{
+  "id": "complete-pipeline-job",
+  "name": "Complete Data Pipeline Test",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read-data",
+        "operator": "read_csv",
+        "input_paths": ["medium-input.csv"],
+        "output_path": "temp/read-output.csv",
+        "partitions": 3
+      },
+      {
+        "id": "map-transform",
+        "operator": "map",
+        "input_paths": ["temp/read-output.csv"],
+        "output_path": "temp/mapped.csv",
+        "partitions": 3,
+        "params": {
+          "function": "uppercase"
+        }
+      },
+      {
+        "id": "filter-data",
+        "operator": "filter",
+        "input_paths": ["temp/mapped.csv"],
+        "output_path": "temp/filtered.csv",
+        "partitions": 3,
+        "params": {
+          "condition": "length > 0"
+        }
+      },
+      {
+        "id": "reduce-aggregate",
+        "operator": "reduce_by_key",
+        "input_paths": ["temp/filtered.csv"],
+        "output_path": "results/aggregated.csv",
+        "partitions": 1
+      }
+    ],
+    "edges": [
+      {
+        "from": "read-data",
+        "to": "map-transform"
+      },
+      {
+        "from": "map-transform",
+        "to": "filter-data"
+      },
+      {
+        "from": "filter-data",
+        "to": "reduce-aggregate"
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+# Ignorar datos generados (pueden ser muy grandes)
+data/*.csv
+data/*.json
+data/*.txt
+
+# Ignorar resultados de benchmarks
+results/*.csv
+results/*.json
+results/*.txt
+
+# Ignorar reportes generados
+BENCHMARK_REPORT.txt
+*.log
+
+# Mantener estructura de directorios
+!data/.gitkeep
+!results/.gitkeep

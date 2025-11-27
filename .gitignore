@@ -1,0 +1,27 @@
+# Binarios compilados
+master/master
+worker/worker
+client/client
+*.exe
+
+# Directorios de datos temporales
+data/*
+results/*
+storage/*
+temp/
+tmp/
+
+# Logs
+*.log
+
+# Go
+*.test
+*.out
+vendor/
+go.sum
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+.DS_Store

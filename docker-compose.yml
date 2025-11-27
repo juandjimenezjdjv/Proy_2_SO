@@ -1,0 +1,116 @@
+# Docker Compose para Mini-Spark
+# Configura un cluster local con 1 master y 3 workers
+
+services:
+  # Master Node - Coordinador principal
+  master:
+    build:
+      context: .
+      dockerfile: master/Dockerfile
+    container_name: minispark-master
+    hostname: master
+    ports:
+      - "8080:8080"  # API HTTP
+    environment:
+      - MASTER_HOST=0.0.0.0
+      - MASTER_PORT=8080
+      - HEARTBEAT_SEC=2
+      - HEARTBEAT_TIMEOUT_SEC=10
+      - LOG_LEVEL=INFO
+      - DATA_DIR=/app/data
+      - RESULTS_DIR=/app/results
+    volumes:
+      # Persistencia de datos entre reinicios
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./storage:/app/storage
+    networks:
+      - minispark-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # Worker Node 1
+  worker1:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: minispark-worker1
+    hostname: worker1
+    environment:
+      - MASTER_HOST=master
+      - MASTER_PORT=8080
+      - WORKER_THREADS=4
+      - MAX_RETRIES=3
+      - LOG_LEVEL=INFO
+    volumes:
+      # Compartir datos de entrada con master
+      - ./data:/app/data:ro
+      # Compartir temp y results entre todos los workers
+      - ./temp:/app/temp
+      - ./results:/app/results
+    networks:
+      - minispark-net
+    depends_on:
+      master:
+        condition: service_healthy
+    restart: on-failure
+
+  # Worker Node 2
+  worker2:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: minispark-worker2
+    hostname: worker2
+    environment:
+      - MASTER_HOST=master
+      - MASTER_PORT=8080
+      - WORKER_THREADS=4
+      - MAX_RETRIES=3
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data:ro
+      - ./temp:/app/temp
+      - ./results:/app/results
+    networks:
+      - minispark-net
+    depends_on:
+      master:
+        condition: service_healthy
+    restart: on-failure
+
+  # Worker Node 3
+  worker3:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: minispark-worker3
+    hostname: worker3
+    environment:
+      - MASTER_HOST=master
+      - MASTER_PORT=8080
+      - WORKER_THREADS=4
+      - MAX_RETRIES=3
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data:ro
+      - ./temp:/app/temp
+      - ./results:/app/results
+    networks:
+      - minispark-net
+    depends_on:
+      master:
+        condition: service_healthy
+    restart: on-failure
+
+# Red privada para comunicación entre contenedores
+networks:
+  minispark-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

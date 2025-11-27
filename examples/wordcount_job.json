@@ -1,0 +1,44 @@
+{
+  "name": "wordcount-example",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read",
+        "op": "read_csv",
+        "path": "data/wordcount/input.csv",
+        "partitions": 4,
+        "params": {
+          "column": "text"
+        }
+      },
+      {
+        "id": "tokenize",
+        "op": "flat_map",
+        "fn": "split_words",
+        "params": {
+          "delimiter": " "
+        }
+      },
+      {
+        "id": "lowercase",
+        "op": "map",
+        "fn": "to_lower"
+      },
+      {
+        "id": "count",
+        "op": "reduce_by_key",
+        "key": "word",
+        "fn": "sum",
+        "params": {
+          "init_value": 0
+        }
+      }
+    ],
+    "edges": [
+      {"from": "read", "to": "tokenize"},
+      {"from": "tokenize", "to": "lowercase"},
+      {"from": "lowercase", "to": "count"}
+    ]
+  },
+  "parallelism": 4
+}

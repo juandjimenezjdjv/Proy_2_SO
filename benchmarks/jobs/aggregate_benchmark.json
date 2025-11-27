@@ -1,0 +1,35 @@
+{
+  "job_id": "benchmark-aggregate-1M",
+  "stages": [
+    {
+      "stage_id": "read",
+      "operator": "read_csv",
+      "config": {
+        "input_path": "sales_1M.csv",
+        "partitions": 8
+      },
+      "dependencies": []
+    },
+    {
+      "stage_id": "filter_delivered",
+      "operator": "filter",
+      "config": {
+        "column": "status",
+        "operator": "eq",
+        "value": "delivered"
+      },
+      "dependencies": ["read"]
+    },
+    {
+      "stage_id": "total_by_city",
+      "operator": "reduce_by_key",
+      "config": {
+        "key_column": "city",
+        "operation": "sum",
+        "value_column": "price",
+        "output_path": "results/city_totals.csv"
+      },
+      "dependencies": ["filter_delivered"]
+    }
+  ]
+}

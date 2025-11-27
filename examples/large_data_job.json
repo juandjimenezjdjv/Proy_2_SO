@@ -1,0 +1,43 @@
+{
+  "id": "large-data-job",
+  "name": "Large Dataset Processing",
+  "dag": {
+    "nodes": [
+      {
+        "id": "read-large",
+        "operator": "read_csv",
+        "input_paths": ["large-input.csv"],
+        "output_path": "temp/large-read.csv",
+        "partitions": 5
+      },
+      {
+        "id": "filter-active",
+        "operator": "filter",
+        "input_paths": ["temp/large-read.csv"],
+        "output_path": "temp/filtered-active.csv",
+        "partitions": 5,
+        "params": {
+          "field": "status",
+          "value": "active"
+        }
+      },
+      {
+        "id": "aggregate-results",
+        "operator": "reduce_by_key",
+        "input_paths": ["temp/filtered-active.csv"],
+        "output_path": "results/large-result.csv",
+        "partitions": 2
+      }
+    ],
+    "edges": [
+      {
+        "from": "read-large",
+        "to": "filter-active"
+      },
+      {
+        "from": "filter-active",
+        "to": "aggregate-results"
+      }
+    ]
+  }
+}
