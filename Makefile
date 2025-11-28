@@ -83,8 +83,20 @@ status: ## Muestra el estado del cluster
 ##@ Testing
 
 test: ## Ejecuta pruebas unitarias
-	@echo "$(GREEN)Ejecutando pruebas...$(NC)"
-	@go test ./... -v
+	@echo "$(GREEN)Ejecutando pruebas unitarias...$(NC)"
+	@go test ./... -v -race
+	@echo "$(GREEN)✓ Pruebas completadas$(NC)"
+
+test-coverage: ## Ejecuta pruebas con reporte de cobertura
+	@echo "$(GREEN)Ejecutando pruebas con cobertura...$(NC)"
+	@go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
+	@go tool cover -html=coverage.out -o coverage.html
+	@go tool cover -func=coverage.out | grep total | awk '{print "$(GREEN)Cobertura total: " $$3 "$(NC)"}'
+	@echo "$(YELLOW)Reporte HTML generado: coverage.html$(NC)"
+
+test-verbose: ## Ejecuta pruebas con output detallado
+	@echo "$(GREEN)Ejecutando pruebas detalladas...$(NC)"
+	@go test ./... -v -race -count=1
 
 test-integration: up ## Ejecuta pruebas de integración con cluster activo
 	@echo "$(GREEN)Ejecutando pruebas de integración...$(NC)"
@@ -96,6 +108,9 @@ test-integration: up ## Ejecuta pruebas de integración con cluster activo
 	@curl -s http://localhost:8080/api/v1/workers | head -c 200
 	@echo ""
 	@echo "$(GREEN)✓ Pruebas básicas completadas$(NC)"
+
+test-all: test test-coverage ## Ejecuta todas las pruebas con cobertura
+	@echo "$(GREEN)✓ Todas las pruebas completadas$(NC)"
 
 ##@ Limpieza
 
