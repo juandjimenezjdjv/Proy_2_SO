@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-11-28T13:57:11.431293159-06:00",
+  "jobs": {},
+  "tasks": {},
+  "workers": {
+    "worker-kitkat-1764359806": {
+      "id": "worker-kitkat-1764359806",
+      "address": "worker-806:8081",
+      "status": "UP",
+      "registered_at": "2025-11-28T13:56:46.862386663-06:00",
+      "last_heartbeat": "2025-11-28T13:57:10.872907724-06:00",
+      "active_tasks": 0,
+      "total_tasks": 0,
+      "metrics": {
+        "cpu_percent": 0.025,
+        "memory_used_mb": 0,
+        "memory_total_mb": 6,
+        "goroutines": 6,
+        "timestamp": 1764359830
+      }
+    }
+  }
+}

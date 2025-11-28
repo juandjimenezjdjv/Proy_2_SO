@@ -98,19 +98,28 @@ test-verbose: ## Ejecuta pruebas con output detallado
 	@echo "$(GREEN)Ejecutando pruebas detalladas...$(NC)"
 	@go test ./... -v -race -count=1
 
-test-integration: up ## Ejecuta pruebas de integración con cluster activo
-	@echo "$(GREEN)Ejecutando pruebas de integración...$(NC)"
-	@sleep 5
-	@echo "$(YELLOW)Probando health check...$(NC)"
-	@curl -s http://localhost:8080/health
-	@echo ""
-	@echo "$(YELLOW)Probando lista de workers...$(NC)"
-	@curl -s http://localhost:8080/api/v1/workers | head -c 200
-	@echo ""
-	@echo "$(GREEN)✓ Pruebas básicas completadas$(NC)"
+test-unit: ## Ejecuta solo pruebas unitarias (sin integration/e2e)
+	@echo "$(GREEN)Ejecutando pruebas unitarias...$(NC)"
+	@go test -v -race ./common ./master ./worker
+	@echo "$(GREEN)✓ Pruebas unitarias completadas$(NC)"
 
-test-all: test test-coverage ## Ejecuta todas las pruebas con cobertura
+test-integration: ## Ejecuta pruebas de integración (nodo único)
+	@echo "$(GREEN)Ejecutando pruebas de integración...$(NC)"
+	@go test -v -race ./tests -run TestIntegration -timeout 10m
+	@echo "$(GREEN)✓ Pruebas de integración completadas$(NC)"
+
+test-e2e: up ## Ejecuta pruebas end-to-end (multinodo con Docker)
+	@echo "$(GREEN)Ejecutando pruebas end-to-end...$(NC)"
+	@go test -v -race ./tests -run TestE2E -timeout 15m
+	@echo "$(GREEN)✓ Pruebas end-to-end completadas$(NC)"
+
+test-all: test-unit test-integration test-e2e ## Ejecuta todos los tipos de pruebas
 	@echo "$(GREEN)✓ Todas las pruebas completadas$(NC)"
+
+test-quick: ## Ejecuta pruebas rápidas (solo unitarias)
+	@echo "$(GREEN)Ejecutando pruebas rápidas...$(NC)"
+	@go test -v -short ./...
+	@echo "$(GREEN)✓ Pruebas rápidas completadas$(NC)"
 
 ##@ Limpieza
 

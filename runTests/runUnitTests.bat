@@ -10,17 +10,18 @@ echo =   MINI-SPARK - TESTS UNITARIOS                 =
 echo ==================================================
 echo.
 
-REM Verificar que estamos en el directorio correcto
-if not exist "go.mod" (
-    echo No se encontró go.mod
+REM Verificar que estamos en el directorio correcto - buscar en directorio padre
+if not exist "..\go.mod" (
+    echo No se encontró go.mod en directorio padre
+    echo Ejecutar desde la carpeta runTests\ o directorio raíz del proyecto
     exit /b 1
 )
 
-echo [ERROR] Ejecutando tests unitarios...
+echo Ejecutando tests unitarios...
 echo.
 
-REM Ejecutar tests de todos los paquetes
-go test ./... -v -race
+# Cambiar al directorio padre y ejecutar tests de todos los paquetes excepto tests/
+cd .. && go test ./common ./master ./worker -v -race
 
 if %ERRORLEVEL% neq 0 (
     echo.

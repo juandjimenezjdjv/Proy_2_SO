@@ -10,17 +10,18 @@ echo "=   MINI-SPARK - TESTS UNITARIOS                 ="
 echo "=================================================="
 echo ""
 
-# Verificar diurectorio correcto
-if [ ! -f "go.mod" ]; then
-    echo "[ERROR] No se encontró go.mod"
+# Verificar diurectorio correcto - buscar en directorio padre
+if [ ! -f "../go.mod" ]; then
+    echo "[ERROR] No se encontró go.mod en directorio padre"
+    echo "Ejecutar desde la carpeta runTests/ o directorio raíz del proyecto"
     exit 1
 fi
 
 echo "Ejecutando tests unitarios..."
 echo ""
 
-# Ejecutar tests de todos los paquetes
-go test ./... -v -race
+# Cambiar al directorio padre y ejecutar tests de todos los paquetes excepto tests/
+cd .. && go test ./common ./master ./worker -v -race
 
 if [ $? -ne 0 ]; then
     echo ""

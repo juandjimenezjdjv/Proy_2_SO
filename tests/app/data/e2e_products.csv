@@ -1,0 +1,7 @@
+product_id,name,category,price
+101,Laptop,Electronics,50.00
+102,Mouse,Electronics,75.00
+103,Notebook,Office,25.00
+104,Monitor,Electronics,100.00
+105,Keyboard,Electronics,150.00
+106,Desk,Furniture,200.00
