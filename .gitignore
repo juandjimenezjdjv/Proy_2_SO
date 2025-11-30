@@ -1,4 +1,8 @@
-
+# Binarios compilados
+master/master
+worker/worker
+client/client
+*.exe
 
 # Directorios de datos temporales
 app/data/*
@@ -14,5 +18,17 @@ app/tmp/
 !app/temp/.gitkeep
 !app/scripts/
 
+# Logs
+*.log
 
-#
+# Go
+*.test
+*.out
+vendor/
+go.sum
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+.DS_Store

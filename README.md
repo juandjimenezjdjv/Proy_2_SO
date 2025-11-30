@@ -2,6 +2,10 @@
 
 > **Sistema de procesamiento distribuido batch desde cero en Go, sin frameworks externos**
 
+## Autores:
+- Juan Diego Jiménez Valverde
+- Kristhel Nicole Cordero Leiva
+
 [![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/License-Academic-green.svg)](LICENSE)
@@ -11,7 +15,7 @@ Mini-Spark es una implementación educativa de un motor de procesamiento distrib
 ---
 
 ## Tabla de Contenidos
-
+- [Enlace a video demo](#-enlace-a-video-demo)
 - [Características Principales](#-características-principales)
 - [Inicio Rápido](#-inicio-rápido)
 - [Arquitectura](#-arquitectura)
@@ -27,6 +31,13 @@ Mini-Spark es una implementación educativa de un motor de procesamiento distrib
 - [Tecnologías](#-tecnologías)
 - [Documentación Adicional](#-documentación-adicional)
 - [Créditos](#-créditos)
+
+---
+
+## Enlace a video demo
+[![Demo Video — Mini‑Spark](https://img.youtube.com/vi/9P2i2mqknEU/maxresdefault.jpg)](https://www.youtube.com/watch?v=9P2i2mqknEU)
+
+[Ver demo en YouTube](https://www.youtube.com/watch?v=9P2i2mqknEU)
 
 ---
 
@@ -965,26 +976,16 @@ cat benchmarks/README.md
 - `docs/Informe.tex` - Informe académico
 - `docs/Informe.pdf` - PDF compilado
 - `benchmarks/README.md` - Resultados de benchmarks
-- `TODO.md` - Tareas pendientes
+- `TESTS.md` - Detalles de pruebas
 
 ---
 
-## 🎓 Créditos
-
-### Proyecto Académico
+## Proyecto Académico
 
 - **Curso**: IC-6600 - Principios de Sistemas Operativos
 - **Institución**: Tecnológico de Costa Rica (TEC)
 - **Profesor**: Kenneth Obando Rodríguez
 - **Fecha**: Noviembre 2025
-
-### Equipo
-
-- **Juan Diego Jiménez** - [@juandjimenezjdjv](https://github.com/juandjimenezjdjv)
-
-### Uso de IA
-
-Este proyecto utilizó **GitHub Copilot** como herramienta de apoyo para documentación, estructuras base y patrones de diseño. Todo el código fue revisado y adaptado por el equipo.
 
 ---
 
