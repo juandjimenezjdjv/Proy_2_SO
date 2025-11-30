@@ -12,6 +12,13 @@ Esta guía cubre todo lo necesario para compilar, ejecutar, probar y detener el 
 
 ---
 
+## Enlace a video demo
+[![Demo Video — Mini‑Spark](https://img.youtube.com/vi/9P2i2mqknEU/maxresdefault.jpg)](https://www.youtube.com/watch?v=9P2i2mqknEU)
+
+[Ver demo en YouTube](https://www.youtube.com/watch?v=9P2i2mqknEU)
+
+---
+
 ## 🏗️ Opción 1: Compilación Manual (Sin Make)
 
 ### Paso 1: Compilar el Master
