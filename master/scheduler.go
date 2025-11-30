@@ -288,7 +288,8 @@ func (s *Scheduler) ReassignFailedTask(task *common.Task) error {
 
 	// Si no hay otro worker disponible, usar cualquiera
 	if selectedWorker == nil {
-		// Elegir el menos cargado
+		// Reinicializar minLoad para buscar entre todos los workers
+		minLoad = int(^uint(0) >> 1) // Max int
 		for _, worker := range availableWorkers {
 			if worker.ActiveTasks < minLoad {
 				minLoad = worker.ActiveTasks
